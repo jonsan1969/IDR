@@ -488,7 +488,7 @@ void __fastcall TIDCGen::OutputRTTIRecord(Byte kind, int pos) {
         // NumOps
         Byte numOps = Code[pos];
         pos = MakeByte(pos);
-        for (n = 0; n < numOps; n++) //RecOps
+		for (int n = 0; n < numOps; n++) //RecOps
         {
             pos = MakeDword(pos);
         }

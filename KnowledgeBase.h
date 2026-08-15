@@ -310,7 +310,7 @@ public:
     int __fastcall GetConstIdxs(const char *ConstName, int *ConstIdx);
     int __fastcall GetTypeIdxByModuleIds(Word *ModuleIDs, const char *TypeName);
     int __fastcall GetTypeIdxsByName(const char *TypeName, int *TypeIdx);
-    // int __fastcall GetTypeIdxByUID(char *UID); // unused
+    int __fastcall GetTypeIdxByUID(char *UID); // unused
     int __fastcall GetVarIdx(Word *ModuleIDs, const char *VarName);
     int __fastcall GetResStrIdx(int from, const char *ResStrContext);
     int __fastcall GetResStrIdx(Word ModuleID, const char *ResStrContext);

@@ -21,9 +21,18 @@ int main() {
     if (!idr::core::CanReplaceTypeName("DWORD", "Integer")) return 6;
     if (idr::core::CanReplaceTypeName("Integer", "DWORD")) return 7;
 
+    if (idr::core::ExtractClassName("TForm1.ButtonClick") != "TForm1") return 8;
+    if (idr::core::ExtractProcName("TForm1.ButtonClick") != "ButtonClick") return 9;
+    if (idr::core::ExtractProcName("ButtonClick") != "ButtonClick") return 10;
+    if (idr::core::ExtractName("Value:Integer") != "Value") return 11;
+    if (idr::core::ExtractType("Value:Integer") != "Integer") return 12;
+    if (idr::core::TrimTypeName("System.Integer") != "Integer") return 13;
+    if (idr::core::TrimTypeName("1..10") != "1..10") return 14;
+
     MDisasm disasm;
     const auto op = disasm.GetOp(const_cast<char *>("mov"));
     std::cout << "portable-core link probe: OP_MOV=" << static_cast<int>(op)
-              << ", name=" << idr::core::DefaultProcName(0x401000) << '\n';
-    return op == OP_MOV ? 0 : 8;
+              << ", name=" << idr::core::DefaultProcName(0x401000)
+              << ", type=" << idr::core::TrimTypeName("System.Integer") << '\n';
+    return op == OP_MOV ? 0 : 15;
 }

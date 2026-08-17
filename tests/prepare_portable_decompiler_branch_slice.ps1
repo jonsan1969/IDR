@@ -3,6 +3,13 @@ $start = $src.IndexOf('bool __fastcall TDecompileEnv::GetBJLRange(')
 $end = $src.IndexOf('void __fastcall TDecompileEnv::UpdateBJLList()', $start)
 if ($start -lt 0 -or $end -lt 0) { throw 'Decompiler branch slice markers not found' }
 $body = $src.Substring($start, $end - $start)
+
+# Embarcadero String(int) formats an integer as text. std::string has no
+# equivalent one-argument integer constructor, so preserve the intended
+# semantics explicitly in the generated portability smoke copy.
+$body = $body -replace 'String\(m \+ 1\)', 'std::to_string(m + 1)'
+$body = $body -replace 'String\(m\)', 'std::to_string(m)'
+
 $prefix = @'
 #include <cassert>
 #include "portable_core_compat.h"

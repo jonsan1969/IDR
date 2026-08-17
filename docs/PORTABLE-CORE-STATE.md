@@ -41,7 +41,7 @@ The following have been successfully compiled on the hosted runner:
 - `Infos.h`
 - a generated portable copy of `Decompiler.h`
 - real `Disasm.cpp` implementation, compiled as x86 after a small generated portability transformation
-- real slices of `Decompiler.cpp`, progressively expanded through decompiler state, register handling, stack/FPU handling, prototype checking and full `TDecompiler::Init()`
+- real slices of `Decompiler.cpp`, progressively expanded through decompiler state, register handling, stack/FPU handling, prototype checking, full `TDecompiler::Init()`, and branch-range analysis
 
 ### Successful decompiler implementation coverage so far
 
@@ -83,19 +83,24 @@ Run #27 was fully green after adding those four constants. This is an important 
 
 ## Current phase: branch/loop analysis slice
 
-The primary contiguous slice now stops immediately before `OutputSourceCodeLine()`, where direct GUI coupling begins through `FMain_11011981`.
+The primary contiguous slice stops immediately before `OutputSourceCodeLine()`, where direct GUI coupling begins through `FMain_11011981`.
 
-Rather than force GUI code into the portable core, a second independent implementation slice is being introduced beginning at:
+Rather than force GUI code into the portable core, a second independent implementation slice begins at:
 
 `TDecompileEnv::GetBJLRange()`
 
 This targets branch/jump/loop analysis while deliberately skipping `OutputSourceCode*()` and `DecompileProc()` presentation/orchestration code.
 
-New harness file:
+Run #30 failed only because the isolated slice lacked the declaration of global core helper `BranchGetPrevInstructionType()` from `Misc.h`.
 
-- `tests/prepare_portable_decompiler_branch_slice.ps1`
+Run #31 was fully green after exposing only that core helper declaration. This proves `GetBJLRange()` itself compiles with MSVC x86 without including VCL-heavy `Misc.h`.
 
-The first branch-analysis smoke test contains only `GetBJLRange()` so that dependency growth remains measurable. `CreateBJLSequence()` will be added after that boundary is proven.
+The branch slice is now being expanded through the complete `CreateBJLSequence()` implementation. The compatibility layer has gained only the list mutation semantics that function demonstrably uses:
+
+- `TList::Clear()`
+- `TList::Delete(index)`
+
+The slice also declares `GetDirectCondition()` and `GetInvertCondition()` explicitly rather than importing the larger original environment.
 
 ## Current portability strategy
 
@@ -121,7 +126,7 @@ Current concepts supplied by the test compatibility layer include:
 - `Byte`, `Word`, `DWord` using `<cstdint>`
 - `String` currently mapped to `std::string`
 - `__fastcall` compatibility macro
-- minimal STL-backed `TList`
+- minimal STL-backed `TList`, now including `Count`, `Items[]`, `Add()`, `Clear()`, and `Delete()`
 - minimal STL-backed `TStringList`
 - minimal `Exception` replacement using the standard C++ exception model
 - selected core flags/kinds normally trapped in `Main.h`, including `cfImport`, `cfPass`, `cfLoc`, `cfSkip`, `ikFloat`, `ikLString`, `ikRecord`, and `ikFunc`
@@ -136,11 +141,17 @@ These are intentionally incomplete. Add only semantics actually required by IDR 
 
 Runs #19 through #27 provide concrete evidence: several harmless decompiler flags/type-kind constants had to be duplicated in the isolated portability layer solely because their canonical definitions currently live inside VCL-heavy `Main.h`.
 
+### `Misc.h`
+
+`Misc.h` has the same mixed-responsibility problem: pure analysis helpers such as `BranchGetPrevInstructionType()` live alongside VCL-facing helpers involving forms, canvases, clipboard operations and dialogs.
+
+The #30 -> #31 transition proved that `GetBJLRange()` needs only the core helper declaration, not the rest of `Misc.h`.
+
 ### GUI boundary after `TDecompiler::Init()`
 
 Immediately after the now-portable `Init()` function, `OutputSourceCodeLine()` writes directly through `FMain_11011981->lbSourceCode`. `OutputSourceCode()` also relies on VCL/Embarcadero string behavior and the form.
 
-This is now treated as a presentation boundary, not as evidence that the underlying decompiler/branch-analysis algorithms require VCL.
+This is treated as a presentation boundary, not as evidence that the underlying decompiler/branch-analysis algorithms require VCL.
 
 ### `TypeInfo2`
 
@@ -173,9 +184,9 @@ A future x64 port would require rewriting/replacing those inline-assembly sectio
 
 ## Immediate next steps
 
-1. Prove `TDecompileEnv::GetBJLRange()` in the new branch-analysis slice.
-2. Expand that slice into `CreateBJLSequence()`; this will likely require adding `Clear()` and `Delete()` semantics to the minimal `TList` shim.
-3. Continue through the BJL expression/loop-analysis helpers while avoiding the known GUI output block.
+1. Compile the expanded branch slice through `CreateBJLSequence()`.
+2. Resolve only the concrete compatibility gaps revealed there; likely watchpoint is Borland `String(int)` semantics in expression numbering.
+3. Continue through `UpdateBJLList()` and the BJL expression/loop-analysis helpers while avoiding the known GUI output block.
 4. Map how much of `Infos.cpp`, `KnowledgeBase.cpp`, `Misc.cpp`, `Analyze1.cpp`, `Analyze2.cpp`, and `AnalyzeArguments.cpp` can compile with the same compatibility layer.
 5. Once enough implementation is proven portable, introduce a real `idr-core` target rather than generated smoke slices.
 6. Add a minimal `idr-cli` executable only after core linkage is practical.

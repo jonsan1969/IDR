@@ -131,5 +131,9 @@ jobs:
           findstr /b /c:"entry-mnemonic=" idr-cli-output.txt >nul || exit /b 1
           findstr /b /c:"entry-disasm=" idr-cli-output.txt >nul || exit /b 1
           findstr /b /c:"entry-block-count=3" idr-cli-output.txt >nul || exit /b 1
+          findstr /b /c:"edge-count=5" idr-cli-output.txt >nul || exit /b 1
+          findstr /b /c:"call-edge-count=3" idr-cli-output.txt >nul || exit /b 1
+          findstr /b /c:"branch-taken-edge-count=1" idr-cli-output.txt >nul || exit /b 1
+          findstr /b /c:"fallthrough-edge-count=1" idr-cli-output.txt >nul || exit /b 1
           findstr /b /c:"candidate-count=2" idr-cli-output.txt >nul || exit /b 1
           findstr /b /c:"candidate-discovered-count=2" idr-cli-output.txt >nul || exit /b 1

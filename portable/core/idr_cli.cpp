@@ -32,6 +32,15 @@ void PrintInstruction(const char *label, std::size_t firstIndex, std::size_t sec
               << " disasm=" << instruction.disasm << '\n';
 }
 
+const char *EdgeKindName(idr::core::ControlFlowEdgeKind kind) {
+    switch (kind) {
+        case idr::core::ControlFlowEdgeKind::Call: return "call";
+        case idr::core::ControlFlowEdgeKind::BranchTaken: return "branch-taken";
+        case idr::core::ControlFlowEdgeKind::FallThrough: return "fallthrough";
+    }
+    return "unknown";
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t **argv) {
@@ -158,9 +167,17 @@ int wmain(int argc, wchar_t **argv) {
     for (std::size_t i = 0; i < flow.entryTrace.size(); ++i)
         PrintInstruction("trace", i, 0, flow.entryTrace[i], false);
 
+    std::size_t callEdgeCount = 0;
+    std::size_t branchTakenEdgeCount = 0;
+    std::size_t fallThroughEdgeCount = 0;
     for (std::size_t i = 0; i < flow.edges.size(); ++i) {
         const auto &edge = flow.edges[i];
-        std::cout << "edge[" << i << "] kind=" << (edge.call ? "call" : "branch")
+        switch (edge.kind) {
+            case idr::core::ControlFlowEdgeKind::Call: ++callEdgeCount; break;
+            case idr::core::ControlFlowEdgeKind::BranchTaken: ++branchTakenEdgeCount; break;
+            case idr::core::ControlFlowEdgeKind::FallThrough: ++fallThroughEdgeCount; break;
+        }
+        std::cout << "edge[" << i << "] kind=" << EdgeKindName(edge.kind)
                   << " from=0x" << std::uppercase << std::hex
                   << std::setw(8) << std::setfill('0') << edge.from
                   << " to=0x" << std::setw(8) << edge.to
@@ -184,6 +201,9 @@ int wmain(int argc, wchar_t **argv) {
     std::cout << "trace-count=" << flow.entryTrace.size() << '\n';
     std::cout << "entry-block-count=" << flow.entryBlocks.size() << '\n';
     std::cout << "edge-count=" << flow.edges.size() << '\n';
+    std::cout << "call-edge-count=" << callEdgeCount << '\n';
+    std::cout << "branch-taken-edge-count=" << branchTakenEdgeCount << '\n';
+    std::cout << "fallthrough-edge-count=" << fallThroughEdgeCount << '\n';
     std::cout << "candidate-count=" << flow.candidates.size() << '\n';
     std::cout << "candidate-discovered-count=" << flow.discoveredCandidateCount << '\n';
     std::cout << "candidate-block-count=" << candidateBlockCount << '\n';

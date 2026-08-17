@@ -60,11 +60,23 @@ int main() {
         return 1;
     }
 
+    std::size_t callEdges = 0;
+    std::size_t branchTakenEdges = 0;
+    std::size_t fallThroughEdges = 0;
+    for (const auto &edge : result.edges) {
+        switch (edge.kind) {
+            case ControlFlowEdgeKind::Call: ++callEdges; break;
+            case ControlFlowEdgeKind::BranchTaken: ++branchTakenEdges; break;
+            case ControlFlowEdgeKind::FallThrough: ++fallThroughEdges; break;
+        }
+    }
+
     if (result.entryBlocks.size() != 3 ||
         result.entryTrace.size() != 5 ||
         result.candidates.size() != 2 ||
         result.discoveredCandidateCount != 2 ||
-        result.edges.size() != 4) {
+        result.edges.size() != 5 ||
+        callEdges != 3 || branchTakenEdges != 1 || fallThroughEdges != 1) {
         std::cerr << "control-flow probe produced unexpected graph shape\n";
         return 2;
     }
@@ -92,5 +104,8 @@ int main() {
     std::cout << "candidate-count=" << result.candidates.size() << '\n';
     std::cout << "procedure-start-count=" << (result.candidates.size() + 1) << '\n';
     std::cout << "edge-count=" << result.edges.size() << '\n';
+    std::cout << "call-edge-count=" << callEdges << '\n';
+    std::cout << "branch-taken-edge-count=" << branchTakenEdges << '\n';
+    std::cout << "fallthrough-edge-count=" << fallThroughEdges << '\n';
     return 0;
 }

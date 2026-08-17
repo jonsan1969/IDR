@@ -34,10 +34,16 @@ struct TraceInstruction {
     std::string disasm;
 };
 
+enum class ControlFlowEdgeKind {
+    Call,
+    BranchTaken,
+    FallThrough,
+};
+
 struct ControlFlowEdge {
     DWord from = 0;
     DWord to = 0;
-    bool call = false;
+    ControlFlowEdgeKind kind = ControlFlowEdgeKind::BranchTaken;
 };
 
 struct BasicBlockTrace {
@@ -144,7 +150,9 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
                     if (targetOffset >= 0) {
                         if (!analysis.SetFlag(CodeFlags::Loc, static_cast<std::size_t>(targetOffset)))
                             return fail("cannot mark control-flow target state");
-                        result.edges.push_back({address, decoded.target, decoded.call});
+                        result.edges.push_back({address, decoded.target,
+                                                decoded.call ? ControlFlowEdgeKind::Call
+                                                             : ControlFlowEdgeKind::BranchTaken});
                         if (decoded.call)
                             enqueueCandidate(decoded.target);
                         else
@@ -160,7 +168,10 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
                 const DWord fallThrough = address + static_cast<DWord>(decoded.length);
 
                 if (decoded.branch) {
-                    if (decoded.conditional) enqueueBlock(fallThrough);
+                    if (decoded.conditional && AddressToOffset(fallThrough) >= 0) {
+                        result.edges.push_back({address, fallThrough, ControlFlowEdgeKind::FallThrough});
+                        enqueueBlock(fallThrough);
+                    }
                     break;
                 }
 

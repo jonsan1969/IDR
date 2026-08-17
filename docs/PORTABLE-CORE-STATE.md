@@ -54,37 +54,30 @@ Run #27: complete `TDecompiler::Init()` compiles with MSVC x86 without importing
 - #37 green: all non-printing BJL helpers through `ExprMerge()` after `.Length()` -> `.size()` transformation.
 - #38 green: complete `PrintBJL()` compiles after mapping `String(k)` to `std::to_string(k)` and exposing only the compile-time String signature of `AnsiReplaceText()`.
 
-The complete BJL slice is therefore now a stable green block. Original source remains unchanged; all portability transforms are generated under `tests/generated`.
+The complete BJL slice is now a stable green block. Original source remains unchanged; all portability transforms are generated under `tests/generated`.
 
 ## Current active test: Decompiler engine slice
 
-A third independent implementation slice has been introduced for the main engine:
+A third independent implementation slice covers complete `TDecompiler::Decompile()` and stops immediately before `TDecompiler::DecompileCaseEnum()`.
 
-`TDecompiler::Decompile()`
+Run #40 was the first compile of the full engine slice. MSVC reached its 100-error cap, but the observed failures were overwhelmingly missing core declarations/constants normally made visible transitively through `Main.h` and `Misc.h`, not VCL calls or a compiler-language blocker.
 
-New generator:
+Observed dependency groups in #40 included:
 
-- `tests/prepare_portable_decompiler_engine_slice.ps1`
+- address/flag helpers (`Adr2Pos`, `Pos2Adr`, `IsFlagSet`, `SetFlag`, `SetFlags`, `ClearFlag`)
+- procedure/info helpers (`GetProcSize`, `GetInfoRec`, `GetNearestUpInstruction`)
+- decompiler helpers (`GetDecompilerRegisterName`, `InitItem`, `GetDirectCondition`, `BranchGetPrevInstructionType`)
+- analysis helpers (`IsIntOver`, `IsExit`, `IsValidCodeAdr`, Int64 comparison helpers)
+- string/helper APIs (`Val2Str8`, `SameText`, `ExtractProcName`, inheritance-name check)
+- globals `Disasm` and `Code`
+- additional core flags/kinds from `Main.h`
+- Borland `Exception::Message` semantics in catch/rethrow paths
 
-The slice contains only the complete `TDecompiler::Decompile()` implementation and stops immediately before `TDecompiler::DecompileCaseEnum()`.
-
-The workflow now prepares and compiles this as a separate object after the already-green primary and BJL slices. This intentionally isolates main-engine dependency growth from the proven BJL block.
-
-Triggering workflow commit: `c79fc41c60f64ebfbbb143355641fafc854a3ff5`.
-
-If the engine slice fails, fetch that new failing run log once, analyze the complete error set from that result, batch related fixes, and do not fetch that run log again.
+The first batch fix exposes these exact dependencies without including the VCL-heavy headers. No original algorithm source is changed.
 
 ## Compatibility layer status
 
-`tests/portable_core_compat.h` currently supplies:
-
-- `Byte`, `Word`, `DWord` via `<cstdint>`
-- temporary `String = std::string`
-- neutralized `__fastcall`
-- minimal STL-backed `TList`
-- minimal STL-backed `TStringList`
-- standard-C++ `Exception` shim
-- selected core flags/kinds trapped in `Main.h`: `cfImport`, `cfPass`, `cfLoc`, `cfSkip`, `ikFloat`, `ikLString`, `ikRecord`, `ikFunc`
+`tests/portable_core_compat.h` supplies temporary compiler-neutral aliases/containers plus selected core constants. After #40 it also includes the engine-required flags/kinds (`cfFrame`, `cfSwitch`, `cfDSkip`, `cfTry`, `cfLoop`, `cfFinallyExit`, `ikUnknown`, `ikConstructor`, `ikDestructor`) and an `Exception::Message` member compatible with the observed Borland exception usage.
 
 Compiler-verified String differences currently mapped in generated smoke code:
 
@@ -98,21 +91,15 @@ Still to map as encountered: 1-based indexing, `Pos()`, `SubString()`, case-inse
 
 ### `Main.h`
 
-Mixes core records/constants with VCL GUI state. Future clean port should move reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
+Mixes core records/constants with VCL GUI state. Runs through #40 increasingly support extracting reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
 
 ### `Misc.h`
 
-Mixes pure analysis helpers with `TForm`, `TCanvas`, clipboard and dialog helpers. #30 -> #31 proved analysis APIs can be exposed independently.
+Mixes pure analysis helpers with `TForm`, `TCanvas`, clipboard and dialog helpers. The engine dependency wall reinforces that a neutral core-analysis API header would remove many transitive dependencies without pulling in VCL.
 
 ### GUI boundary after `TDecompiler::Init()`
 
 `OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()` directly couple to form/presentation behavior and are intentionally skipped by the headless core mapping.
-
-### Other UI-heavy areas
-
-- `InputDlg.*`
-- `Resources.*`
-- `TypeInfo2.*` presentation side
 
 ## Working rules
 

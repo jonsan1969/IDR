@@ -19,6 +19,16 @@ $prefixEnd = $engine.IndexOf('DWord __fastcall TDecompiler::Decompile(')
 if ($prefixEnd -lt 0) { throw 'Portable engine prefix marker not found' }
 $prefix = $engine.Substring(0, $prefixEnd)
 
+# Syscall-specific core declarations/constants normally inherited through
+# Misc.h. Keep these local to this slice until a neutral core header exists.
+$prefix += @'
+#ifndef FT_EXTENDED
+#define FT_EXTENDED 3
+#endif
+String __fastcall GetTypeName(DWord TypeAdr);
+
+'@
+
 # Preserve observed Embarcadero numeric String construction narrowly.
 $numericStringArgs = @(
     '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_item4.IntValue',
@@ -29,7 +39,9 @@ foreach ($arg in $numericStringArgs) {
     $body = $body -replace "(?<![A-Za-z0-9_])String\($escaped\)", "std::to_string($arg)"
 }
 
-# Map String methods already proven by earlier slices.
+# Map String methods already proven by earlier slices, preserving Delphi's
+# 1-based Pos/SubString semantics through the shared portable helpers.
+$body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Pos\(([^\r\n\)]+)\)', 'PortableStringPos($1, $2)'
 $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.SubString\(([^,\r\n]+),\s*([^\)\r\n]+)\)', 'PortableSubString($1, $2, $3)'
 $body = $body -replace '\.Length\(\)', '.size()'
 

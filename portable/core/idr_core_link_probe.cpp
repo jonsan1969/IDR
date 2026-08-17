@@ -1,9 +1,11 @@
 #include "IdrAnalysis.h"
 #include "IdrAnalysisState.h"
 #include "IdrCoreServices.h"
+#include "IdrImageContext.h"
 #include "IdrInstructionNav.h"
 
 #include <Windows.h>
+#include <array>
 #include <cstdint>
 #include <iostream>
 
@@ -60,12 +62,37 @@ int main() {
     if (idr::core::GetNearestArgA(nav, 8) != 5) return 30;
     if (idr::core::GetNearestUpInstruction(nav, 5) != -1) return 31;
 
+    std::array<Byte, 9> image{{
+        0x90,                         // 0: nop
+        0x64, 0xA1, 0, 0, 0, 0,     // 1: mov eax, fs:[00000000]
+        0x90,                         // 7: nop
+        0xC3                          // 8: ret
+    }};
+    idr::core::SetImageView({image.data(), image.size(), 0x00401000});
+    if (idr::core::AddressToOffset(0x00401001) != 1) return 32;
+    const auto address = idr::core::OffsetToAddress(8);
+    if (!address || *address != 0x00401008) return 33;
+
+    idr::core::AnalysisState decoded(image.size());
+    decoded.SetFlag(idr::core::CodeFlags::Instruction, 0);
+    decoded.SetFlag(idr::core::CodeFlags::Instruction, 1);
+    decoded.SetFlag(idr::core::CodeFlags::Instruction, 7);
+    decoded.SetFlag(idr::core::CodeFlags::Instruction, 8);
+
     MDisasm disasm;
+    if (!disasm.Init()) return 34;
+    if (idr::core::GetNearestUpPrefixFs(decoded, disasm, 8) != 1) return 35;
+    if (idr::core::GetNearestUpInstructionMatching(decoded, disasm, 8, 0, "mov") != 1) return 36;
+    if (idr::core::GetNearestUpInstructionMatching(decoded, disasm, 8, 0, "push", "mov") != 1) return 37;
+    if (idr::core::GetNearestDownInstruction(decoded, disasm, 0) != 1) return 38;
+    if (idr::core::GetNearestDownInstructionMatching(decoded, disasm, 0, "ret") != 8) return 39;
+
     const auto op = disasm.GetOp(const_cast<char *>("mov"));
     std::cout << "portable-core link probe: OP_MOV=" << static_cast<int>(op)
               << ", name=" << idr::core::DefaultProcName(0x401000)
               << ", type=" << idr::core::TrimTypeName("System.Integer")
               << ", flags=" << state.Size()
-              << ", nearest=" << idr::core::GetNearestUpInstruction(nav, 9) << '\n';
-    return op == OP_MOV ? 0 : 32;
+              << ", nearest=" << idr::core::GetNearestUpInstruction(nav, 9)
+              << ", fs=" << idr::core::GetNearestUpPrefixFs(decoded, disasm, 8) << '\n';
+    return op == OP_MOV ? 0 : 40;
 }

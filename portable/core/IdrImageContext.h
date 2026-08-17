@@ -3,6 +3,7 @@
 #include "IdrCoreTypes.h"
 
 #include <cstddef>
+#include <optional>
 
 namespace idr::core {
 
@@ -15,5 +16,6 @@ struct ImageView {
 void SetImageView(ImageView image);
 const ImageView &GetImageView();
 int AddressToOffset(DWord address);
+std::optional<DWord> OffsetToAddress(std::size_t offset);
 
 } // namespace idr::core

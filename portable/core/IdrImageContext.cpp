@@ -15,6 +15,11 @@ int AddressToOffset(DWord address) {
     return static_cast<int>(offset);
 }
 
+std::optional<DWord> OffsetToAddress(std::size_t offset) {
+    if (!g_image.data || offset >= g_image.size) return std::nullopt;
+    return g_image.imageBase + static_cast<DWord>(offset);
+}
+
 } // namespace idr::core
 
 using Byte = idr::core::Byte;

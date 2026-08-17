@@ -59,6 +59,7 @@ Do not perform this reorganization until the smoke-test experiment has mapped th
 - `tests/prepare_portable_disasm.ps1`
 - `tests/prepare_portable_decompiler.ps1`
 - `tests/prepare_portable_decompiler_slice.ps1`
+- `tests/prepare_portable_decompiler_branch_slice.ps1`
 
 Generated files are placed under `tests/generated` during Actions runs and are not intended to replace the original source files.
 
@@ -81,13 +82,20 @@ For current compile smoke tests it is neutralized with a macro under MSVC. Calli
 
 ### `TList`
 
-Current minimal functionality needed:
+Current minimal functionality needed by proven-green code:
 
 - `Count`
 - `Items[index]`
 - `Add(void *)`
 
 Implemented using `std::vector<void *>` in the test compatibility layer.
+
+The next BJL slice (`CreateBJLSequence`) is expected to need at least:
+
+- `Clear()`
+- `Delete(index)`
+
+Do not add semantics until the slice requiring them is introduced and compiled.
 
 ### `TStringList`
 
@@ -113,7 +121,26 @@ Do not assume the current shim is sufficient outside the code already tested.
 
 ### `Exception`
 
-The decompiler stack code throws Borland `Exception("Stack!")`. The portable test layer replaces this with a standard C++ exception wrapper derived from `std::runtime_error`.
+The decompiler stack and branch code throws Borland `Exception`. The portable test layer replaces this with a standard C++ exception wrapper derived from `std::runtime_error`.
+
+### Constants trapped in `Main.h`
+
+The isolated core slices currently duplicate only constants they actually require instead of including VCL-heavy `Main.h`.
+
+Known examples now required by tested/active slices:
+
+```text
+cfImport
+cfPass
+cfLoc
+cfSkip
+ikFloat
+ikLString
+ikRecord
+ikFunc
+```
+
+This repeated pattern is strong evidence that a future neutral `CoreTypes.h`/`IdrTypes.h` should own these constants and be included by both the portable core and VCL `Main.h`.
 
 ## `Disasm.cpp`
 
@@ -130,21 +157,71 @@ Current policy: compile behavior first; modernize later.
 
 ## `Decompiler.cpp`
 
-The source is large (~372 KB) and should not be attacked as one giant port. The current method expands an implementation slice progressively from a known beginning marker.
+The source is large (~372 KB) and should not be attacked as one giant port. The current method uses multiple implementation slices separated around architectural/UI boundaries.
 
-Early routines compiled without major changes once basic IDR types were available.
+### Primary contiguous slice
 
-The first meaningful runtime dependencies encountered were `TStringList`, `TList`, and Borland `Exception`, all of which have so far been representable with small standard-C++ shims.
+The primary slice starts at `GetString()` and now runs through the complete `TDecompiler::Init()` implementation.
 
-This is encouraging because these are compatibility issues, not deeply VCL-coupled algorithmic dependencies.
+Run #27 proved that this complete span compiles with MSVC x86 after only minimal compatibility definitions.
+
+This span now includes:
+
+- naming/string helpers
+- condition helpers
+- `ITEM` manipulation
+- namer/loop/environment objects
+- saved register/FPU context handling
+- decompiler construction/destruction
+- decompiler flags
+- integer register state
+- normal stack state
+- FPU stack state
+- prototype validation
+- procedure initialization including calling-convention argument placement and return-value setup
+
+The compiler failures encountered while expanding this span were primarily missing core constants from `Main.h`, not Embarcadero runtime behavior.
+
+### Explicit GUI boundary after `Init()`
+
+Immediately after `TDecompiler::Init()` the file enters:
+
+- `TDecompileEnv::OutputSourceCodeLine()`
+- `TDecompileEnv::OutputSourceCode()`
+- `TDecompileEnv::DecompileProc()`
+
+`OutputSourceCodeLine()` writes directly to `FMain_11011981->lbSourceCode`, and the output functions use Embarcadero string behavior such as 1-based indexing/`Pos()`/`SameText()`.
+
+Do not drag this block into the portable core merely to preserve source contiguity. Treat it as a presentation/orchestration boundary.
+
+### Branch-analysis slice
+
+A second slice now begins at:
+
+`TDecompileEnv::GetBJLRange()`
+
+The first test intentionally includes only this function and stops before `CreateBJLSequence()`.
+
+Dependencies identified by inspection:
+
+- global `Disasm`
+- global `Code`
+- `Adr2Pos()`
+- `IsFlagSet()`
+- `cfSkip`
+- existing `Exception` shim
+- existing `DISINFO`/`MDisasm` definitions
+- member `BranchGetPrevInstructionType()` is only referenced, so compile-only testing does not require linking its implementation yet
+
+If this compiles, the slice will expand into `CreateBJLSequence()`, which starts exercising mutation-heavy list behavior and condition-expression construction.
 
 ## `Main.h`
 
-Major architectural smell: core records and application GUI state coexist in the same header.
+Major architectural smell: core records/constants and application GUI state coexist in the same header.
 
 Expected future action:
 
-- identify structs/enums/records consumed by analysis code
+- identify structs/enums/records/constants consumed by analysis code
 - move/copy them into a neutral core header
 - make `Main.h` consume that core header rather than making the core include `Main.h`
 
@@ -177,6 +254,7 @@ These should not block a headless core:
 - `InputDlg.*`
 - most/all form `.dfm` files
 - `Resources.*` initially
+- `OutputSourceCodeLine()` / direct `FMain_11011981` output plumbing
 - GUI dialogs and viewers
 
 For any algorithm that currently asks the UI for data, prefer an interface/callback in the eventual core rather than pulling VCL into the portable target.
@@ -191,6 +269,8 @@ The GitHub-hosted Windows environment observed in successful runs:
 - MSVC x86 initialized through `vswhere.exe` and `vcvars32.bat`
 
 Do not hardcode a Visual Studio installation path. Continue using `vswhere`.
+
+`docs/**` is ignored by push-triggered CI, so keeping these notes current does not consume compiler runs.
 
 ### Node.js Actions policy
 
@@ -211,9 +291,15 @@ Only milestone runs matter; intermediate runs may be cancelled by concurrency.
 - Run #13: all tests green, including `Infos.h`, portable `Decompiler.h`, and real `Disasm.cpp`.
 - Run #15: first real `Decompiler.cpp` implementation slice green.
 - Run #17: substantially expanded decompiler slice green, including STL-backed list shims.
-- Run #19: active/next milestone at time of writing; extends through register and stack handling and adds `Exception` shim.
+- Run #19: red only because `cfPass`/`cfLoc` were missing from the isolated harness.
+- Run #23: green through `InitFlags`, register handling, and `Push`/`Pop`.
+- Run #24: red only because `ikFunc` was missing; FPU stack code compiled.
+- Run #25: green through FPU stack helpers and `CheckPrototype()`.
+- Run #26: red only because `cfImport`, `ikFloat`, `ikLString`, and `ikRecord` were missing.
+- Run #27: green through the complete `TDecompiler::Init()` implementation.
+- Next active milestone: compile the independent `GetBJLRange()` branch-analysis slice.
 
-Do not fetch old workflow logs repeatedly. Use the already documented result unless a later run changes the conclusion.
+Do not fetch old workflow logs repeatedly. Use the already documented result unless a later run changes the conclusion. Fetch a failed run log once, analyze the complete failure from that result, and fetch again only for a new run.
 
 ## Things not to do yet
 

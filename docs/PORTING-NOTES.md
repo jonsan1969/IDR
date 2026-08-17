@@ -33,10 +33,11 @@ Do not fetch successful run logs. For a failing run, fetch the log once, analyze
 - `tests/prepare_portable_decompiler_engine_slice.ps1`
 - `tests/prepare_portable_decompiler_case_slice.ps1`
 - `tests/prepare_portable_decompiler_syscall_slice.ps1`
+- `tests/prepare_portable_decompiler_call_slice.ps1`
 
 Generated transformed files live under `tests/generated` during CI. Original IDR source remains unchanged.
 
-The syscall slice deliberately reuses the generated prefix from `prepare_portable_decompiler_engine_slice.ps1`; this avoids duplicating and drifting the large set of core declarations already proven by #49.
+Later implementation slices deliberately reuse the generated prefix from `prepare_portable_decompiler_engine_slice.ps1`; this avoids duplicating and drifting the large set of core declarations already proven by #49.
 
 ## Compatibility layer
 
@@ -50,6 +51,7 @@ Temporary aliases include `Byte`, `Word`, `DWord`, `String = std::string`, `Ansi
 - #42: engine reaches `String::Pos()`, `IntToStr`, `IntToHex`, `AnsiString`, and further numeric `String(...)` calls.
 - Later engine mapping also reaches `SubString()`, `SetLength()`, `QuotedStr`, and `WideString` behavior.
 - #48: final engine compile errors were only numeric/String semantic mismatches: `String = 0`, direct integer concatenation, and four `String(_imm)` constructions.
+- #57: syscall simulation reused the already-known 1-based `String::Pos()` mapping; no new String semantic category appeared.
 
 `Pos` and `SubString` helpers preserve Embarcadero's 1-based semantics in generated smoke code. Do not blindly substitute raw `std::string` indexing/find semantics.
 
@@ -136,7 +138,7 @@ No new core helper, flag, container or GUI dependency appeared.
 
 #### Run #49 — main engine green
 
-Complete `TDecompiler::Decompile()` compiles successfully under hosted MSVC x86. Job metadata confirmed every workflow step green; no successful-run log was fetched.
+Complete `TDecompiler::Decompile()` compiles successfully under hosted MSVC x86. Job metadata confirmed every workflow step green.
 
 This is an object-compilation portability milestone, not yet proof of runtime semantic equivalence. The original `Decompiler.cpp` remains unchanged; all adaptations are generated smoke transforms or compatibility declarations.
 
@@ -155,17 +157,43 @@ are mapped narrowly to `std::to_string(...)` in the generated smoke copy.
 
 #### Run #51 — case-enum green
 
-Complete `TDecompiler::DecompileCaseEnum()` compiles successfully under hosted MSVC x86. Job metadata confirmed all steps green; no successful-run log was fetched.
+Complete `TDecompiler::DecompileCaseEnum()` compiles successfully under hosted MSVC x86. Job metadata confirmed all steps green.
 
 ### Syscall slice
 
-A fifth independent slice covers `GetSysCallAlias()` plus complete `SimulateSysCall()`, ending immediately before `SimulateInherited()`.
+A fifth independent slice covers `GetSysCallAlias()` plus complete `SimulateSysCall()`.
 
-The generator reuses the already-proven engine prefix/declarations and applies only the String transforms already justified by previous compiler results. This keeps syscall-specific failures attributable to that block rather than to duplicated harness state.
+The generator reuses the already-proven engine prefix/declarations and applies only String transforms justified by previous compiler results.
 
-#### Runs #53 and #54 — harness only
+#### Runs #53-#56 — harness only
 
-Neither run reached syscall compilation. #53 failed because the initial slice markers were too strict. #54 found the start correctly but revealed that `SimulateCall()` is not the immediate next function after `SimulateSysCall()`. The correct source boundary is `SimulateInherited()`, and the generator was updated accordingly. These runs are harness failures, not IDR/MSVC portability findings.
+These runs never reached syscall compilation. Initial assumptions about exact source markers and the identity/order of the following function were wrong. The final generator stops at IDR's normal function separator after `SimulateSysCall()` instead of depending on the next function name.
+
+These were harness failures, not IDR/MSVC portability findings.
+
+#### Run #57 — first real syscall compile
+
+The remaining compile surface was small:
+
+- missing pure helper declaration `String __fastcall GetTypeName(DWord TypeAdr)`
+- missing float type constant `FT_EXTENDED = 3`
+- three `String::Pos()` uses that needed the already-proven 1-based helper mapping
+
+The string assignment/concatenation diagnostics on the same lines were follow-on errors from the missing `GetTypeName` return type.
+
+#### Run #58 — syscall green
+
+Complete `GetSysCallAlias()` + `SimulateSysCall()` compiles successfully under hosted MSVC x86. Job metadata confirmed every workflow step green, including main engine, case-enum, syscall and `Disasm.cpp`.
+
+No new GUI dependency appeared in the syscall slice. This strengthens the conclusion that much of IDR's runtime/helper reconstruction logic can live in a neutral core once the mixed `Misc.h` declarations are separated from VCL utilities.
+
+### Call-simulation slice — active
+
+A sixth independent slice now covers `SimulateInherited()` plus complete `SimulateCall()`.
+
+The generator uses the same robust separator-based end boundary as the syscall slice, reuses the proven engine prefix, and applies only already-observed `Pos`, `SubString`, `Length`, `SetLength`, and controlled numeric `String(...)` transforms.
+
+This slice is intended to map call resolution, argument reconstruction and return-value handling without destabilizing the already-green #58 syscall block.
 
 ## Mixed-responsibility headers
 
@@ -175,7 +203,7 @@ Core flags/kinds and GUI form state coexist. The growing engine constant set is 
 
 ### `Misc.h`
 
-Many pure analysis APIs used by the engine coexist with forms/canvas/dialog helpers. A separate neutral analysis API header is increasingly justified.
+Many pure analysis APIs used by the engine and syscall simulator coexist with forms/canvas/dialog helpers. A separate neutral analysis API header is increasingly justified.
 
 ### Form-owned analysis helpers
 

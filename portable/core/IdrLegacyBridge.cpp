@@ -113,10 +113,10 @@ DWord __fastcall FindClassAdrByName(const String &name){const auto it=classAddre
 String PortableWorkDir(){return std::filesystem::current_path().string();}
 
 int PortableEstimateProcSize(DWord address){
-    const auto offset=idr::core::AddressToOffset(address);
-    if(!offset) return 0;
-    const auto pos=*offset;
-    if(Infos && pos<TotalSize && Infos[pos] && Infos[pos]->procInfo && Infos[pos]->procInfo->procSize>0)
+    const int offset=idr::core::AddressToOffset(address);
+    if(offset<0) return 0;
+    const auto pos=static_cast<std::size_t>(offset);
+    if(Infos && pos<static_cast<std::size_t>(TotalSize) && Infos[pos] && Infos[pos]->procInfo && Infos[pos]->procInfo->procSize>0)
         return Infos[pos]->procInfo->procSize;
     const auto &state=idr::core::LegacyAnalysisState();
     if(pos>=state.Size()) return 0;

@@ -19,7 +19,19 @@ $bodyMarkGeneral = Get-MethodBody 'TDecompiler::MarkGeneralCase(' 'void __fastca
 $bodyGeneralCase = Get-MethodBody 'TDecompiler::DecompileGeneralCase(' 'DWord __fastcall '
 $bodyTry = Get-MethodBody 'TDecompiler::DecompileTry(' 'DWord __fastcall '
 $bodyConditions = Get-MethodBody 'TDecompiler::AnalyzeConditions(' 'int __fastcall '
-$body = $bodyPush + $bodyPop + $bodyFloat + $bodyFormat + $bodyMarkCase + $bodyMarkGeneral + $bodyGeneralCase + $bodyTry + $bodyConditions
+
+# Coverage audit #97 identified these eight remaining TDecompiler helpers.
+$bodyArrayField = Get-MethodBody 'TDecompiler::GetArrayFieldOffset(' 'int __fastcall '
+$bodyCycleFrom = Get-MethodBody 'TDecompiler::GetCycleFrom(' 'String __fastcall '
+$bodyCycleIdx = Get-MethodBody 'TDecompiler::GetCycleIdx(' 'void __fastcall '
+$bodyCycleTo = Get-MethodBody 'TDecompiler::GetCycleTo(' 'String __fastcall '
+$bodyFloatStack = Get-MethodBody 'TDecompiler::GetFloatItemFromStack(' 'void __fastcall '
+$bodyInt64Stack = Get-MethodBody 'TDecompiler::GetInt64ItemFromStack(' 'void __fastcall '
+$bodyMemItem = Get-MethodBody 'TDecompiler::GetMemItem(' 'void __fastcall '
+$bodyStringArgument = Get-MethodBody 'TDecompiler::GetStringArgument(' 'String __fastcall '
+
+$body = $bodyPush + $bodyPop + $bodyFloat + $bodyFormat + $bodyMarkCase + $bodyMarkGeneral + $bodyGeneralCase + $bodyTry + $bodyConditions +
+        $bodyArrayField + $bodyCycleFrom + $bodyCycleIdx + $bodyCycleTo + $bodyFloatStack + $bodyInt64Stack + $bodyMemItem + $bodyStringArgument
 
 & "$PSScriptRoot\prepare_portable_decompiler_engine_slice.ps1"
 $engine = Get-Content -Raw -LiteralPath "$PSScriptRoot\generated\Decompiler.engine.slice.cpp"

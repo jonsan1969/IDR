@@ -32,19 +32,16 @@ Actions policy:
 - `docs/**` ignored for push CI
 - stale runs cancelled with workflow concurrency
 
-Do not fetch successful run logs. For a failing run, fetch the log once, analyze it locally/from the returned result, and fetch again only for a new run.
+Do not fetch successful run logs. For a failing run, fetch the log once, analyze it from the returned result, and fetch again only for a new run.
 
 ## Harness files
 
 - `tests/portable_core_compat.h`
-- `tests/portable_disasm_header_smoke.cpp`
-- `tests/portable_kb_header_smoke.cpp`
-- `tests/portable_infos_header_smoke.cpp`
-- `tests/portable_decompiler_header_smoke.cpp`
 - `tests/prepare_portable_disasm.ps1`
 - `tests/prepare_portable_decompiler.ps1`
 - `tests/prepare_portable_decompiler_slice.ps1`
 - `tests/prepare_portable_decompiler_branch_slice.ps1`
+- `tests/prepare_portable_decompiler_engine_slice.ps1`
 
 Generated transformed files live under `tests/generated` during CI. Original IDR source remains unchanged.
 
@@ -59,61 +56,25 @@ using DWord = std::uint32_t;
 using String = std::string;
 ```
 
-`String = std::string` is temporary and only compile-oriented.
+`String = std::string` is temporary and compile-oriented.
 
 ### Proven String mismatches
 
-Run #33 established numeric construction:
+Run #33: numeric construction such as `String(m)` / `String(m + 1)` is not source-compatible with `std::string`; generated smoke code maps observed forms to `std::to_string(...)`.
 
-```cpp
-String(m)
-String(m + 1)
-```
+Run #36: Embarcadero `String::Length()` is mapped to `std::string::size()` in generated smoke code.
 
-Embarcadero converts integers to decimal text; the generated smoke copy maps observed forms to `std::to_string(...)`. Run #34 proved that sufficient for complete `CreateBJLSequence()`.
+Run #38: `PrintBJL()` additionally needs numeric `String(k)` and `AnsiReplaceText(...)`. Numeric construction is mapped to `std::to_string(k)`; compile-only validation exposes a narrow String signature for `AnsiReplaceText()` rather than importing `System.StrUtils.hpp` or prematurely implementing RTL semantics.
 
-Run #36 established the second mismatch: Embarcadero `String::Length()` has no `std::string` member equivalent. The generated smoke copy maps observed `.Length()` calls to `.size()`. Run #37 proved that sufficient for the complete non-printing BJL helper span through `ExprMerge()`.
+Do not introduce a large custom String wrapper until more semantics are mapped. Still watch 1-based indexing, `Pos()`, `SubString()`, case-insensitive helpers, ANSI/Unicode behavior and other RTL conversions.
 
-Current `PrintBJL()` mapping adds numeric `String(k)` -> `std::to_string(k)`.
+### Containers
 
-Do not introduce a large custom String wrapper prematurely. Remaining semantics to map include:
-
-- 1-based indexing
-- `Pos()`
-- `SubString()`
-- case-insensitive helpers / `AnsiReplaceText`
-- Unicode/ANSI behavior
-- additional numeric constructors/conversions
-
-### `AnsiReplaceText`
-
-`PrintBJL()` uses `AnsiReplaceText()` from `System.StrUtils.hpp`. For the current compile-only slice, expose only a compatible String signature in the generated prefix rather than importing VCL/RTL headers or implementing replacement semantics prematurely. Runtime/link semantics must be supplied before a real portable executable/library target links this path.
-
-### `TList`
-
-Current STL-backed shim supports:
-
-- `Count`
-- `Items[index]`
-- `Add(void *)`
-- `Clear()`
-- `Delete(index)`
-
-`Clear()` / `Delete()` are non-owning; IDR code deletes pointed-to objects explicitly where needed.
-
-### `TStringList`
-
-Current minimal shim supports `Sorted`, `Count`, `Strings`, `Add()`, and `IndexOf()`.
-
-Still watch duplicate handling, case sensitivity, ownership/Objects, sorted insertion and encoding semantics.
-
-### `Exception`
-
-Borland `Exception` is represented by a small `std::runtime_error` wrapper for the current smoke code.
+Current STL-backed `TList` shim supports `Count`, `Items[]`, `Add()`, `Clear()`, and `Delete(index)`. Current `TStringList` shim supports `Sorted`, `Count`, `Strings`, `Add()`, and `IndexOf()`.
 
 ### Core constants trapped in `Main.h`
 
-Current isolated slices require selected definitions copied into the compatibility layer rather than importing VCL-heavy `Main.h`:
+Current isolated slices require selected definitions copied into the compatibility layer instead of importing VCL-heavy `Main.h`:
 
 ```text
 cfImport
@@ -126,19 +87,11 @@ ikRecord
 ikFunc
 ```
 
-This is evidence for a future neutral `CoreTypes.h` / `IdrTypes.h`.
+This remains evidence for future `CoreTypes.h` / `IdrTypes.h` extraction.
 
 ## `Disasm.cpp`
 
-Real implementation compiles with MSVC x86 after generated portability transforms.
-
-Known non-blocking warnings/issues:
-
-- old CRT calls (`sprintf`, `strcat`, `strcpy`)
-- unused locals
-- inline x86 asm modifies `ebp`
-
-Do not modernize these while mapping portability unless required. x64 is a separate later project because MSVC does not support inline asm in x64 mode.
+Real implementation compiles with MSVC x86 after generated portability transforms. Legacy CRT warnings and inline-x86 `ebp` warnings are non-blocking and intentionally not modernized during mapping.
 
 ## `Decompiler.cpp` mapping
 
@@ -148,40 +101,46 @@ Starts at `GetString()` and runs through complete `TDecompiler::Init()`.
 
 Run #27: fully green.
 
-This span includes naming/condition helpers, `ITEM` manipulation, namer/loop/environment objects, saved context, flags, register state, normal/FPU stacks, prototype checking, calling-convention argument setup and return-value setup.
-
 ### GUI boundary
 
-Immediately after `TDecompiler::Init()` are `OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()`. Direct `FMain_11011981` output and Embarcadero String behavior make this a presentation/orchestration boundary, so it is intentionally skipped.
+Immediately after `TDecompiler::Init()` are `OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()`. Direct form output and Embarcadero-specific String behavior make these presentation/orchestration code, so they are intentionally skipped.
 
 ### BJL / branch-analysis slice
 
-Starts at `TDecompileEnv::GetBJLRange()`.
-
-Dependencies exposed explicitly instead of importing mixed GUI headers include global `Disasm`, global `Code`, `Adr2Pos()`, `IsFlagSet()`, `BranchGetPrevInstructionType()`, `GetDirectCondition()`, `GetInvertCondition()`, and `cfSkip`.
+Starts at `TDecompileEnv::GetBJLRange()` and now runs through complete `PrintBJL()`.
 
 Milestones:
 
-- #30 red: missing declaration for `BranchGetPrevInstructionType()`.
+- #30 red: missing `BranchGetPrevInstructionType()` declaration.
 - #31 green: complete `GetBJLRange()`.
-- #33 red: numeric `String(int)` mismatch inside `CreateBJLSequence()`.
-- #34 green: complete `CreateBJLSequence()` after narrow `std::to_string()` transform.
-- #35 green: complete `UpdateBJLList()` and `BJLAnalyze()` with no new shim.
-- #36 red: `.Length()` mismatch in the expanded helper block.
-- #37 green: complete helper span through `ExprMerge()` after `.Length()` -> `.size()` transform.
+- #33 red: numeric `String(int)` mismatch.
+- #34 green: complete `CreateBJLSequence()`.
+- #35 green: complete `UpdateBJLList()` + `BJLAnalyze()`.
+- #36 red: `.Length()` mismatch.
+- #37 green: all non-printing BJL helpers through `ExprMerge()`.
+- #38 green: complete `PrintBJL()`.
 
-### Active BJL expansion: `PrintBJL()`
+This BJL slice is now treated as a stable independently green compile block.
 
-The branch-slice end marker is now immediately before `TDecompiler::Decompile()`, so the active compile additionally includes complete `TDecompileEnv::PrintBJL()`.
+### Main engine slice
 
-Observed dependencies:
+A third independent slice has been added for complete `TDecompiler::Decompile()` only. It begins at:
 
 ```cpp
-String(k)
-AnsiReplaceText(...)
+DWord __fastcall TDecompiler::Decompile(...)
 ```
 
-The generated smoke copy maps `String(k)` to `std::to_string(k)` and declares only the String signature of `AnsiReplaceText()` for compile-only validation. Triggering commit: `5170af65ceb3fdf2edf3e728b85ec007d903d1be`.
+and stops immediately before:
+
+```cpp
+DWord __fastcall TDecompiler::DecompileCaseEnum(...)
+```
+
+Generator: `tests/prepare_portable_decompiler_engine_slice.ps1`.
+
+The CI workflow now compiles `tests/generated/Decompiler.engine.slice.cpp` as a separate object after the primary and BJL slices. This split is deliberate: the main engine is expected to expose a much larger helper/global dependency surface, and failures there should not obscure the already-proven BJL portability.
+
+Triggering workflow commit: `c79fc41c60f64ebfbbb143355641fafc854a3ff5`.
 
 ## Mixed-responsibility headers
 
@@ -191,11 +150,11 @@ Contains both core structs/constants and VCL GUI state. Future split should move
 
 ### `Misc.h`
 
-Contains pure analysis helpers such as `BranchGetPrevInstructionType()` alongside `TForm`, `TCanvas`, clipboard and dialog helpers. The #30 -> #31 transition proved the analysis dependency can be exposed independently.
+Contains pure analysis helpers alongside `TForm`, `TCanvas`, clipboard and dialog helpers. The #30 -> #31 transition proved analysis dependencies can be exposed independently.
 
 ### `TypeInfo2.*`
 
-Contains useful RTTI logic mixed with a VCL form. Later candidate extraction: `Guid2String`, `GetRTTI`, `GetCppTypeInfo`.
+Contains useful RTTI logic mixed with a VCL form. Later extraction candidates include `Guid2String`, `GetRTTI`, and `GetCppTypeInfo`.
 
 ### UI-only / initially excluded
 
@@ -203,25 +162,6 @@ Contains useful RTTI logic mixed with a VCL form. Later candidate extraction: `G
 - `Resources.*`
 - most `.dfm` presentation code
 - direct `FMain_11011981` output plumbing
-
-## Run milestone summary
-
-- #13: headers + portable Decompiler header + real Disasm implementation green.
-- #15: first real Decompiler implementation slice green.
-- #17: expanded Decompiler slice green with initial STL containers.
-- #19: red only on missing `cfPass` / `cfLoc`.
-- #23: green through register and normal-stack handling.
-- #24: red only on missing `ikFunc`.
-- #25: green through FPU stack + `CheckPrototype()`.
-- #26: red only on `cfImport`, `ikFloat`, `ikLString`, `ikRecord`.
-- #27: green through complete `TDecompiler::Init()`.
-- #30: red only on missing core-helper declaration.
-- #31: green through complete `GetBJLRange()`.
-- #33: red only on `String(int)` semantics.
-- #34: green through complete `CreateBJLSequence()`.
-- #35: green through `UpdateBJLList()` + `BJLAnalyze()`.
-- #36: red only on `.Length()` semantics.
-- #37: green through all non-printing BJL helpers up to `ExprMerge()`.
 
 ## Working rules
 

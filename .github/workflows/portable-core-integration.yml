@@ -31,6 +31,7 @@ jobs:
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrImageContext.cpp /Fo:IdrImageContext.obj
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrAnalysis.cpp /Fo:IdrAnalysis.obj
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrAnalysisState.cpp /Fo:IdrAnalysisState.obj
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrInstructionNav.cpp /Fo:IdrInstructionNav.obj
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_core_link_probe.cpp /Fo:idr_core_link_probe.obj
           cl /nologo /std:c++17 /W3 /EHsc /I. /c tests\generated\Disasm.portable.cpp /Fo:Disasm.portable.obj
 
@@ -39,7 +40,7 @@ jobs:
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          link /nologo /subsystem:console /out:idr-core-link-probe.exe IdrCoreServices.obj IdrImageContext.obj IdrAnalysis.obj IdrAnalysisState.obj idr_core_link_probe.obj Disasm.portable.obj > link-output.txt 2>&1
+          link /nologo /subsystem:console /out:idr-core-link-probe.exe IdrCoreServices.obj IdrImageContext.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj idr_core_link_probe.obj Disasm.portable.obj > link-output.txt 2>&1
           if errorlevel 1 (
             for /f "usebackq delims=" %%L in ("link-output.txt") do echo ::error title=MSVC linker::%%L
             type link-output.txt

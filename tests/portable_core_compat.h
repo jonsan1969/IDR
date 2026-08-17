@@ -12,6 +12,7 @@ using Byte = std::uint8_t;
 using Word = std::uint16_t;
 using DWord = std::uint32_t;
 using String = std::string;
+using AnsiString = std::string;
 
 #ifndef __fastcall
 #define __fastcall
@@ -53,20 +54,59 @@ using String = std::string;
 #ifndef ikUnknown
 #define ikUnknown 0x00
 #endif
+#ifndef ikInteger
+#define ikInteger 0x01
+#endif
+#ifndef ikChar
+#define ikChar 0x02
+#endif
+#ifndef ikEnumeration
+#define ikEnumeration 0x03
+#endif
 #ifndef ikFloat
 #define ikFloat 0x04
+#endif
+#ifndef ikClass
+#define ikClass 0x07
 #endif
 #ifndef ikLString
 #define ikLString 0x0A
 #endif
+#ifndef ikWString
+#define ikWString 0x0B
+#endif
+#ifndef ikVariant
+#define ikVariant 0x0C
+#endif
+#ifndef ikArray
+#define ikArray 0x0D
+#endif
 #ifndef ikRecord
 #define ikRecord 0x0E
+#endif
+#ifndef ikInt64
+#define ikInt64 0x10
+#endif
+#ifndef ikUString
+#define ikUString 0x12
+#endif
+#ifndef ikCString
+#define ikCString 0x20
+#endif
+#ifndef ikWCString
+#define ikWCString 0x21
+#endif
+#ifndef ikVMT
+#define ikVMT 0x23
 #endif
 #ifndef ikConstructor
 #define ikConstructor 0x26
 #endif
 #ifndef ikDestructor
 #define ikDestructor 0x27
+#endif
+#ifndef ikProc
+#define ikProc 0x28
 #endif
 #ifndef ikFunc
 #define ikFunc 0x29

@@ -30,6 +30,7 @@ Actions policy:
 - Avoid Node.js 20 based Actions
 - No `ilammy/msvc-dev-cmd@v1`; MSVC setup is done directly to avoid its Node 20 runtime
 - `concurrency` with `cancel-in-progress: true` is enabled to avoid queues of stale smoke runs
+- `docs/**` is ignored for push-triggered CI so documentation-only commits do not start compiler runs
 
 ## What is proven to compile with MSVC on GitHub-hosted Actions
 
@@ -40,7 +41,7 @@ The following have been successfully compiled on the hosted runner:
 - `Infos.h`
 - a generated portable copy of `Decompiler.h`
 - real `Disasm.cpp` implementation, compiled as x86 after a small generated portability transformation
-- real slices of `Decompiler.cpp`, progressively expanded from helper routines through significant decompiler state and environment code
+- real slices of `Decompiler.cpp`, progressively expanded through decompiler state, register handling and stack handling
 
 ### Successful decompiler implementation coverage so far
 
@@ -61,13 +62,15 @@ The tested slice has reached through code covering:
 - local variable naming
 - context save/restore
 - `TDecompiler` construction/destruction
-- decompiler flag handling
-- register item handling
-- stack handling is the next active boundary
+- decompiler flag handling, including `InitFlags`
+- register item handling (`SetRegItem`, `GetRegItem`, `GetRegType`)
+- stack handling (`Push`, `Pop`)
 
 Run #17 was fully green after adding STL-backed replacements for the minimal `TList`/`TStringList` behavior needed by this slice.
 
-Run #19 was triggered to extend the slice through register and stack handling and introduce a minimal `Exception` shim.
+Run #19 failed only because the isolated slice did not yet define the core flags `cfPass` and `cfLoc`. These flags live in the VCL-heavy `Main.h`; the failure was not a compiler, STL, stack, or VCL architectural blocker.
+
+Run #23 was fully green after adding only the missing core flag definitions to the portability layer. This confirms the expanded slice through `InitFlags`, register handling, and `Push`/`Pop` compiles with MSVC x86 on GitHub-hosted Actions.
 
 ## Current portability strategy
 
@@ -95,6 +98,7 @@ Current concepts supplied by the test compatibility layer include:
 - minimal STL-backed `TList`
 - minimal STL-backed `TStringList`
 - minimal `Exception` replacement using the standard C++ exception model
+- core flag definitions required by isolated decompiler code, currently including `cfPass` and `cfLoc`
 
 These are intentionally incomplete. Add only semantics actually required by IDR code as the smoke-test boundary expands.
 
@@ -102,7 +106,9 @@ These are intentionally incomplete. Add only semantics actually required by IDR 
 
 ### `Main.h`
 
-`Main.h` mixes core data structures with VCL GUI definitions. A future clean port will probably split reusable analysis structures into a compiler-neutral header such as `IdrTypes.h` or `CoreTypes.h`.
+`Main.h` mixes core data structures, flag constants, and VCL GUI definitions. A future clean port will probably split reusable analysis structures/constants into a compiler-neutral header such as `IdrTypes.h` or `CoreTypes.h`.
+
+The #19 -> #23 transition is concrete evidence for this: two harmless core flags needed by the decompiler were trapped inside `Main.h`, forcing the isolated test to duplicate only those definitions rather than include all of VCL.
 
 ### `TypeInfo2`
 
@@ -122,6 +128,7 @@ These do not currently stop compilation:
 
 - old CRT calls such as `sprintf`, `strcat`, `strcpy`
 - unused variables in legacy code
+- signed/unsigned comparison warnings
 - x86 inline assembly touching `ebp` in `Disasm.cpp`
 
 Do not modernize these while proving portability unless necessary. Functional porting and cleanup/security modernization should remain separate changes to reduce regression risk.
@@ -134,8 +141,8 @@ A future x64 port would require rewriting/replacing those inline-assembly sectio
 
 ## Immediate next steps
 
-1. Observe run #19 and fix only the first genuine portability failure.
-2. Continue expanding the real `Decompiler.cpp` implementation slice.
+1. Expand the real `Decompiler.cpp` implementation slice beyond `Push`/`Pop`, through FPU stack helpers and the next coherent group of `TDecompiler` methods.
+2. Continue adding only minimal compatibility semantics when a genuine compiler/runtime dependency is reached.
 3. Map how much of `Infos.cpp`, `KnowledgeBase.cpp`, `Misc.cpp`, `Analyze1.cpp`, `Analyze2.cpp`, and `AnalyzeArguments.cpp` can compile with the same compatibility layer.
 4. Once enough implementation is proven portable, introduce a real `idr-core` target rather than generated smoke slices.
 5. Add a minimal `idr-cli` executable only after core linkage is practical.

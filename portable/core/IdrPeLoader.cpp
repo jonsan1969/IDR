@@ -122,10 +122,10 @@ bool LoadPe32File(const std::filesystem::path &path, LoadedPeImage &image, std::
         const auto span = static_cast<std::size_t>(segment.size);
         const auto rawSize = static_cast<std::size_t>(section.SizeOfRawData);
         const auto rawOffset = static_cast<std::size_t>(section.PointerToRawData);
-        if (rawSize > span) return Fail(error, "section raw data exceeds legacy analysis span");
         if (rawOffset > file.size() || rawSize > file.size() - rawOffset)
             return Fail(error, "section raw data is outside file");
-        if (rawSize) std::memcpy(image.bytes.data() + packedOffset, file.data() + rawOffset, rawSize);
+        const auto copySize = (std::min)(rawSize, span);
+        if (copySize) std::memcpy(image.bytes.data() + packedOffset, file.data() + rawOffset, copySize);
         packedOffset += span;
     }
 

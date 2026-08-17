@@ -1,5 +1,8 @@
 #include "IdrPeLoader.h"
 
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Windows.h>
 
 #include <algorithm>
@@ -99,12 +102,12 @@ bool LoadPe32File(const std::filesystem::path &path, LoadedPeImage &image, std::
         image.segments.push_back({optional.ImageBase + section.VirtualAddress, span, flags});
 
         if (!unbacked) {
-            if (span > std::numeric_limits<std::size_t>::max() - packedSize)
+            if (span > (std::numeric_limits<std::size_t>::max)() - packedSize)
                 return Fail(error, "packed image size overflow");
             packedSize += span;
         }
     }
-    if (packedSize == 0 || packedSize > std::numeric_limits<DWord>::max())
+    if (packedSize == 0 || packedSize > (std::numeric_limits<DWord>::max)())
         return Fail(error, "PE image has no backed analysis bytes");
 
     image.bytes.assign(packedSize, 0);

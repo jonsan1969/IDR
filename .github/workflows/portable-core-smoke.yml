@@ -15,13 +15,15 @@ jobs:
       - name: Compile Disasm header smoke test
         shell: cmd
         run: |
-          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars32.bat"
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
           cl /nologo /std:c++17 /W4 /EHsc /c tests\portable_disasm_header_smoke.cpp /Fo:portable_disasm_header_smoke.obj
 
       - name: Compile KnowledgeBase header smoke test
         shell: cmd
         run: |
-          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars32.bat"
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
           cl /nologo /std:c++17 /W4 /EHsc /c tests\portable_kb_header_smoke.cpp /Fo:portable_kb_header_smoke.obj
 
       - name: Prepare portable Disasm.cpp copy
@@ -31,5 +33,6 @@ jobs:
       - name: Compile Disasm.cpp portable smoke test
         shell: cmd
         run: |
-          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars32.bat"
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
           cl /nologo /std:c++17 /W3 /EHsc /c tests\generated\Disasm.portable.cpp /Fo:Disasm.portable.obj

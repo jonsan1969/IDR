@@ -1,4 +1,4 @@
-#pragma comment(linker, "/entry:_FixtureEntry")
+#pragma comment(linker, "/entry:FixtureEntry")
 #pragma comment(linker, "/nodefaultlib")
 
 extern "C" __declspec(noinline) int __cdecl FixtureTarget() {

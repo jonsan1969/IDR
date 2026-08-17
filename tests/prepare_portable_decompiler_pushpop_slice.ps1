@@ -71,6 +71,18 @@ $body = $body -replace 'String\(_N1\s*-\s*_N2\)', 'std::to_string(_N1 - _N2)'
 $body = $body -replace 'String\(_N1\s*-\s*1\)', 'std::to_string(_N1 - 1)'
 $body = $body -replace 'String\(intTo\s*-\s*1\)', 'std::to_string(intTo - 1)'
 $body = $body -replace 'String\(intTo\s*\+\s*1\)', 'std::to_string(intTo + 1)'
+
+# The final helpers contain a small set of BCB numeric String conversions.
+# Use exact literal replacements here: this avoids broad String(...) rewriting
+# and cannot touch legitimate pointer/string constructors.
+$body = $body.Replace('String(item.IntValue)', 'std::to_string(item.IntValue)')
+$body = $body.Replace('String(Env->Stack[varIdxInfo.IdxValue].IntValue)', 'std::to_string(Env->Stack[varIdxInfo.IdxValue].IntValue)')
+$body = $body.Replace('String(intTo - 1)', 'std::to_string(intTo - 1)')
+$body = $body.Replace('String(intTo + 1)', 'std::to_string(intTo + 1)')
+# Currency in C++Builder exposes a textual conversion operator. Keep this as a
+# compile-smoke-only numeric rendering until the real portable Currency type exists.
+$body = $body.Replace('_currVal.operator String()', 'std::to_string(_currVal.Val)')
+
 $body = $body -replace '(?<![A-Za-z0-9_])True(?![A-Za-z0-9_])', 'true'
 $body = $body -replace '(?<![A-Za-z0-9_])False(?![A-Za-z0-9_])', 'false'
 $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Pos\(([^\r\n\)]+)\)', 'PortableStringPos($1, $2)'

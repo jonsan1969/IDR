@@ -94,6 +94,29 @@ int main() {
         return 2;
     }
 
+    if (result.procedures.size() != 3 ||
+        result.procedures[0].address != kBase ||
+        result.procedures[0].blockCount != 3 ||
+        result.procedures[0].instructionCount != 5 ||
+        result.procedures[0].callEdgeCount != 1 ||
+        result.procedures[0].branchTakenEdgeCount != 1 ||
+        result.procedures[0].fallThroughEdgeCount != 1 ||
+        result.procedures[1].address != kTargetA ||
+        result.procedures[1].blockCount != 1 ||
+        result.procedures[1].instructionCount != 3 ||
+        result.procedures[1].callEdgeCount != 2 ||
+        result.procedures[1].branchTakenEdgeCount != 0 ||
+        result.procedures[1].fallThroughEdgeCount != 0 ||
+        result.procedures[2].address != kTargetB ||
+        result.procedures[2].blockCount != 1 ||
+        result.procedures[2].instructionCount != 1 ||
+        result.procedures[2].callEdgeCount != 0 ||
+        result.procedures[2].branchTakenEdgeCount != 0 ||
+        result.procedures[2].fallThroughEdgeCount != 0) {
+        std::cerr << "control-flow probe produced unexpected procedure summaries\n";
+        return 3;
+    }
+
     const auto branchOffset = static_cast<std::size_t>(AddressToOffset(kBranchTarget));
     const auto aOffset = static_cast<std::size_t>(AddressToOffset(kTargetA));
     const auto bOffset = static_cast<std::size_t>(AddressToOffset(kTargetB));
@@ -109,13 +132,14 @@ int main() {
         (analysis.Flags()[aOffset] & requiredProcedureFlags) != requiredProcedureFlags ||
         (analysis.Flags()[bOffset] & requiredProcedureFlags) != requiredProcedureFlags) {
         std::cerr << "control-flow probe produced unexpected analysis flags\n";
-        return 3;
+        return 4;
     }
 
     std::cout << "neutral-control-flow=ok\n";
     std::cout << "entry-block-count=" << result.entryBlocks.size() << '\n';
     std::cout << "candidate-count=" << result.candidates.size() << '\n';
     std::cout << "procedure-start-count=" << (result.candidates.size() + 1) << '\n';
+    std::cout << "procedure-summary-count=" << result.procedures.size() << '\n';
     std::cout << "edge-count=" << result.edges.size() << '\n';
     std::cout << "call-edge-count=" << callEdges << '\n';
     std::cout << "branch-taken-edge-count=" << branchTakenEdges << '\n';

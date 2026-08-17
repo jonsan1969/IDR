@@ -58,6 +58,15 @@ struct ProcedureTrace {
     std::vector<BasicBlockTrace> blocks;
 };
 
+struct ProcedureSummary {
+    DWord address = 0;
+    std::size_t blockCount = 0;
+    std::size_t instructionCount = 0;
+    std::size_t callEdgeCount = 0;
+    std::size_t branchTakenEdgeCount = 0;
+    std::size_t fallThroughEdgeCount = 0;
+};
+
 struct ControlFlowOptions {
     std::size_t traceLimit = 8;
     std::size_t candidateLimit = 8;
@@ -69,6 +78,7 @@ struct ControlFlowResult {
     std::vector<BasicBlockTrace> entryBlocks;
     std::vector<ControlFlowEdge> edges;
     std::vector<ProcedureTrace> candidates;
+    std::vector<ProcedureSummary> procedures;
     std::size_t discoveredCandidateCount = 0;
     std::size_t discoveredBlockCount = 0;
     std::string error;
@@ -202,6 +212,28 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
             return result.error.empty() ? fail("procedure candidate trace produced no instructions") : false;
         result.candidates.push_back(std::move(candidate));
     }
+
+    const auto appendSummary = [&](DWord address,
+                                   const std::vector<BasicBlockTrace> &blocks,
+                                   const std::vector<TraceInstruction> &instructions) {
+        ProcedureSummary summary;
+        summary.address = address;
+        summary.blockCount = blocks.size();
+        summary.instructionCount = instructions.size();
+        for (const auto &edge : result.edges) {
+            if (edge.procedure != address) continue;
+            switch (edge.kind) {
+                case ControlFlowEdgeKind::Call: ++summary.callEdgeCount; break;
+                case ControlFlowEdgeKind::BranchTaken: ++summary.branchTakenEdgeCount; break;
+                case ControlFlowEdgeKind::FallThrough: ++summary.fallThroughEdgeCount; break;
+            }
+        }
+        result.procedures.push_back(summary);
+    };
+
+    appendSummary(entryPoint, result.entryBlocks, result.entryTrace);
+    for (const auto &candidate : result.candidates)
+        appendSummary(candidate.address, candidate.blocks, candidate.instructions);
 
     return true;
 }

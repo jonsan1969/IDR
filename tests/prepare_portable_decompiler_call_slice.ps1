@@ -20,7 +20,8 @@ $prefix = $engine.Substring(0, $prefixEnd)
 # Preserve only numeric String constructions already seen in decompiler code.
 $numericStringArgs = @(
     '_argsNum', '_retBytes', '_retBytesCalc', '_len', '_val', '_esp', '_idx', '_rn', '_ndx', '_size', '_recsize',
-    '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_item4.IntValue'
+    '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_item4.IntValue',
+    '_classAdr', '_adr', '_dynAdr', 'callAdr', 'curAdr'
 )
 foreach ($arg in $numericStringArgs) {
     $escaped = [regex]::Escape($arg)
@@ -32,6 +33,15 @@ $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]
 $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.SubString\(([^,\r\n]+),\s*([^\)\r\n]+)\)', 'PortableSubString($1, $2, $3)'
 $body = $body -replace '\.Length\(\)', '.size()'
 $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.SetLength\(([^\)\r\n]+)\)', '$1.resize($2)'
+
+# SimulateCall repeats the same embedded-procedure UI policy and form-owned
+# virtual-method lookup already reached by the main Decompile() engine. Keep
+# the generated smoke copy headless and reuse the same neutral boundaries.
+$body = $body -replace 'int _savedIdx = FMain_11011981->lbCode->ItemIndex;', 'int _savedIdx = -1;'
+$body = $body -replace 'FMain_11011981->lbCode->ItemIndex = -1;', '// portable smoke: no GUI selection state'
+$body = $body -replace 'FMain_11011981->lbCode->ItemIndex = _savedIdx;', '// portable smoke: no GUI selection state'
+$body = $body -replace '(?s)if \(Application->MessageBox\(\s*String\("Decompile embedded procedure at address " \+ _embAdr \+ "\?"\)\.c_str\(\), L"Confirmation",\s*MB_YESNO\) == IDYES\)', 'if (PortableConfirmEmbeddedProcedure(_embAdr))'
+$body = $body -replace 'FMain_11011981->GetMethodInfo\(', 'PortableGetMethodInfo('
 
 New-Item -ItemType Directory -Force -Path "$PSScriptRoot\generated" | Out-Null
 Set-Content -LiteralPath "$PSScriptRoot\generated\Decompiler.call.slice.cpp" -Value ($prefix + $body) -Encoding utf8

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <iomanip>
 #include <limits>
@@ -48,10 +49,15 @@ char *Reg32Tab[8]={r320,r321,r322,r323,r324,r325,r326,r327};
 char sr0[]="es",sr1[]="cs",sr2[]="ss",sr3[]="ds",sr4[]="fs",sr5[]="gs",sr6[]="??",sr7[]="??";
 char *SegRegTab[8]={sr0,sr1,sr2,sr3,sr4,sr5,sr6,sr7};
 
+String __fastcall GetEnumerationString(String TypeName, Variant Val);
+
 namespace {
 idr::core::AnalysisState fallbackState;
 idr::core::AnalysisState *activeState = &fallbackState;
+idr::core::Services fallbackServices = idr::core::MakeHeadlessServices();
+idr::core::Services *activeServices = &fallbackServices;
 std::map<String,DWord> classAddressCache;
+MethodRec portableMethodRecord{};
 
 void SyncLegacyFlagsView(){
     const auto &view=activeState->Flags();
@@ -66,11 +72,25 @@ void EnsureFallbackSize(){
 }
 char LowerAscii(char ch){return static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));}
 String LowerAsciiCopy(const String &value){String result=value;std::transform(result.begin(),result.end(),result.begin(),LowerAscii);return result;}
+
+bool ParseLegacyInteger(const String &text, __int64 &value){
+    if(text.empty()) return false;
+    const char *start=text.c_str();
+    int base=0;
+    if(text[0]=='$') { start++; base=16; }
+    char *end=nullptr;
+    const long long parsed=std::strtoll(start,&end,base);
+    if(end==start || *end!='\0') return false;
+    value=static_cast<__int64>(parsed);
+    return true;
+}
 }
 
 namespace idr::core {
 void SetLegacyAnalysisState(AnalysisState *state){activeState=state?state:&fallbackState;EnsureFallbackSize();}
 AnalysisState &LegacyAnalysisState(){EnsureFallbackSize();return *activeState;}
+void SetLegacyServices(Services *services){activeServices=services?services:&fallbackServices;}
+Services &LegacyServices(){return *activeServices;}
 }
 
 bool __fastcall IsFlagSet(DWord flag,int pos){if(pos<0)return false;return idr::core::LegacyAnalysisState().IsFlagSet(flag,static_cast<std::size_t>(pos));}
@@ -92,6 +112,46 @@ void __fastcall AddClassAdr(DWord address,const String &name){if(!name.empty())c
 DWord __fastcall FindClassAdrByName(const String &name){const auto it=classAddressCache.find(name);return it==classAddressCache.end()?0:it->second;}
 String PortableWorkDir(){return std::filesystem::current_path().string();}
 
+int PortableEstimateProcSize(DWord address){
+    const auto offset=idr::core::AddressToOffset(address);
+    if(!offset) return 0;
+    const auto pos=*offset;
+    if(Infos && pos<TotalSize && Infos[pos] && Infos[pos]->procInfo && Infos[pos]->procInfo->procSize>0)
+        return Infos[pos]->procInfo->procSize;
+    const auto &state=idr::core::LegacyAnalysisState();
+    if(pos>=state.Size()) return 0;
+    for(std::size_t i=pos+1;i<state.Size();++i)
+        if(state.IsFlagSet(cfProcStart,i)) return static_cast<int>(i-pos);
+    const auto imageSize=idr::core::GetImageView().size;
+    return imageSize>pos ? static_cast<int>(imageSize-pos) : 0;
+}
+
+String __fastcall ManualInput(DWord procAdr,DWord curAdr,String caption,String labelText){
+    auto &services=idr::core::LegacyServices();
+    if(!services.manualInput) return "";
+    const auto result=services.manualInput(procAdr,curAdr,caption,labelText);
+    return result.value_or("");
+}
+
+PMethodRec PortableGetMethodInfo(DWord classAdr,char kind,int offset){
+    auto &services=idr::core::LegacyServices();
+    if(!services.lookupMethod) return nullptr;
+    const auto method=services.lookupMethod(classAdr,offset);
+    if(!method) return nullptr;
+    portableMethodRecord.abstract=false;
+    portableMethodRecord.kind=kind;
+    portableMethodRecord.id=offset;
+    portableMethodRecord.address=method->address;
+    portableMethodRecord.name=method->name;
+    return &portableMethodRecord;
+}
+
+String PortableGetEnumerationString(const String &typeName,const String &value){
+    __int64 numeric=0;
+    if(!ParseLegacyInteger(value,numeric)) return "";
+    return GetEnumerationString(typeName,static_cast<Variant>(numeric));
+}
+
 String __fastcall IntToStr(__int64 value){return std::to_string(value);}
 String __fastcall IntToHex(__int64 value,int digits){std::ostringstream out;out<<std::uppercase<<std::hex<<std::setfill('0');if(digits>0)out<<std::setw(digits);out<<static_cast<unsigned long long>(value);return out.str();}
 String __fastcall QuotedStr(const String &value){String result;result.reserve(value.size()+2);result.push_back('\'');for(char ch:value){result.push_back(ch);if(ch=='\'')result.push_back('\'');}result.push_back('\'');return result;}
@@ -104,5 +164,10 @@ template String FloatToStr<double>(double);
 template String FloatToStr<__int64>(__int64);
 template String FloatToStr<long double>(long double);
 
-bool PortableConfirmEmbeddedProcedure(const String &){return false;}
+bool PortableConfirmEmbeddedProcedure(const String &address){
+    __int64 parsed=0;
+    if(!ParseLegacyInteger(address,parsed)) return false;
+    auto &services=idr::core::LegacyServices();
+    return services.confirmEmbeddedProcedure && services.confirmEmbeddedProcedure(static_cast<DWord>(parsed));
+}
 String PortableCurrencyToString(const Currency &value){const bool negative=value.Val<0;const auto magnitude=negative?static_cast<unsigned long long>(-(value.Val+1))+1ULL:static_cast<unsigned long long>(value.Val);const auto whole=magnitude/10000ULL;auto fraction=magnitude%10000ULL;std::ostringstream out;if(negative)out<<'-';out<<whole;if(fraction!=0){out<<'.'<<std::setw(4)<<std::setfill('0')<<fraction;String formatted=out.str();while(!formatted.empty()&&formatted.back()=='0')formatted.pop_back();return formatted;}return out.str();}

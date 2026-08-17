@@ -14,6 +14,12 @@ $src = $src -replace '(?m)^\s*#include\s*"Misc\.h"\s*\r?\n', ''
 $src = $src -replace '(?m)^\s*#pragma\s+hdrstop\s*\r?\n', ''
 $src = $src -replace '(?m)^\s*#pragma\s+package\([^\r\n]+\)\s*\r?\n', ''
 
+# The original source contains an intentionally empty, header-marked-unused
+# GetTypeIdxByUID definition. BCC tolerated its missing return value; MSVC
+# diagnoses it as C4716. Omit only that dead definition from the portable TU
+# rather than inventing behavior that never existed.
+$src = $src -replace '(?m)^int __fastcall MKnowledgeBase::GetTypeIdxByUID\(char \*UID\) \{\}\s*\r?\n', ''
+
 # Narrow Borland String transforms used by KnowledgeBase.cpp. Keep these local
 # to this generated TU so we do not create another cross-object helper owner.
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*)\.LastDelimiter\(([^\)\r\n]+)\)', 'PortableKBLastDelimiter($1, $2)'

@@ -3,6 +3,7 @@
 #include <Windows.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -85,6 +86,9 @@ bool LoadPe32File(const std::filesystem::path &path, LoadedPeImage &image, std::
         const auto &section = sections[i];
         DWord span = section.Misc.VirtualSize;
         if (i + 1 < sections.size()) span = sections[i + 1].VirtualAddress - section.VirtualAddress;
+        if (span == 0) return Fail(error, "section has zero analysis span");
+        const auto sectionEnd = static_cast<std::uint64_t>(section.VirtualAddress) + span;
+        if (sectionEnd > optional.SizeOfImage) return Fail(error, "section analysis span exceeds SizeOfImage");
 
         const bool unbacked = section.SizeOfRawData == 0 ||
             (resourceVa != 0 && section.VirtualAddress == resourceVa) ||

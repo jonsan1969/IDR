@@ -165,44 +165,19 @@ The primary slice starts at `GetString()` and now runs through the complete `TDe
 
 Run #27 proved that this complete span compiles with MSVC x86 after only minimal compatibility definitions.
 
-This span now includes:
-
-- naming/string helpers
-- condition helpers
-- `ITEM` manipulation
-- namer/loop/environment objects
-- saved register/FPU context handling
-- decompiler construction/destruction
-- decompiler flags
-- integer register state
-- normal stack state
-- FPU stack state
-- prototype validation
-- procedure initialization including calling-convention argument placement and return-value setup
-
-The compiler failures encountered while expanding this span were primarily missing core constants from `Main.h`, not Embarcadero runtime behavior.
+This span now includes naming/string helpers, condition helpers, `ITEM` manipulation, namer/loop/environment objects, saved register/FPU context handling, decompiler construction/destruction, flags, integer/FPU/normal stack state, prototype validation, and procedure initialization including calling-convention argument placement and return-value setup.
 
 ### Explicit GUI boundary after `Init()`
 
-Immediately after `TDecompiler::Init()` the file enters:
-
-- `TDecompileEnv::OutputSourceCodeLine()`
-- `TDecompileEnv::OutputSourceCode()`
-- `TDecompileEnv::DecompileProc()`
-
-`OutputSourceCodeLine()` writes directly to `FMain_11011981->lbSourceCode`, and the output functions use Embarcadero string behavior such as 1-based indexing/`Pos()`/`SameText()`.
+Immediately after `TDecompiler::Init()` the file enters `OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()`. `OutputSourceCodeLine()` writes directly to `FMain_11011981->lbSourceCode`, and the output functions use Embarcadero string behavior such as 1-based indexing/`Pos()`/`SameText()`.
 
 Do not drag this block into the portable core merely to preserve source contiguity. Treat it as a presentation/orchestration boundary.
 
 ### Branch-analysis slice
 
-A second slice now begins at:
+A second slice begins at `TDecompileEnv::GetBJLRange()` and initially stops before `CreateBJLSequence()`.
 
-`TDecompileEnv::GetBJLRange()`
-
-The first test intentionally includes only this function and stops before `CreateBJLSequence()`.
-
-Dependencies identified by inspection:
+Dependencies identified so far:
 
 - global `Disasm`
 - global `Code`
@@ -211,41 +186,27 @@ Dependencies identified by inspection:
 - `cfSkip`
 - existing `Exception` shim
 - existing `DISINFO`/`MDisasm` definitions
-- member `BranchGetPrevInstructionType()` is only referenced, so compile-only testing does not require linking its implementation yet
+- global `BranchGetPrevInstructionType(DWord, DWord *, PLoopInfo)`
 
-If this compiles, the slice will expand into `CreateBJLSequence()`, which starts exercising mutation-heavy list behavior and condition-expression construction.
+Run #30 reached the branch-analysis compile and failed only because `BranchGetPrevInstructionType()` had not been declared in the isolated slice. The function is declared in `Misc.h`, which itself mixes pure core-analysis APIs with GUI types such as `TForm`, `TCanvas`, and clipboard helpers. The portable slice now declares only this one core API instead of including all of `Misc.h`.
+
+This is further evidence that `Misc.h` should eventually be split into core-analysis helpers and UI helpers.
+
+If the corrected `GetBJLRange()` slice compiles, expand next into `CreateBJLSequence()`, which starts exercising mutation-heavy list behavior and condition-expression construction.
 
 ## `Main.h`
 
-Major architectural smell: core records/constants and application GUI state coexist in the same header.
+Major architectural smell: core records/constants and application GUI state coexist in the same header. A future neutral header should own the reusable structs/enums/constants and be consumed by both the portable core and VCL application.
 
-Expected future action:
+## `Misc.h`
 
-- identify structs/enums/records/constants consumed by analysis code
-- move/copy them into a neutral core header
-- make `Main.h` consume that core header rather than making the core include `Main.h`
+`Misc.h` is now confirmed to have the same mixed-responsibility problem as `Main.h`: it declares pure analysis helpers such as `BranchGetPrevInstructionType()` alongside VCL-facing helpers involving forms, canvases, clipboard operations and dialogs.
 
-Do this only when enough of the core has been mapped to avoid repeatedly reshuffling definitions.
+A future cleanup should split these responsibilities, but only after the smoke tests have mapped enough of the actual dependency graph.
 
 ## `TypeInfo2`
 
-`TypeInfo2` contains useful RTTI processing but places it inside/alongside a VCL form class.
-
-Likely future split:
-
-```text
-RTTI core helpers
-    Guid2String
-    GetRTTI
-    GetCppTypeInfo
-
-VCL presentation
-    ShowKbInfo
-    ShowRTTI
-    memo/form handlers
-```
-
-The exact split must be based on implementation dependencies, not only declarations.
+`TypeInfo2` contains useful RTTI processing but places it inside/alongside a VCL form class. RTTI helpers such as `Guid2String`, `GetRTTI`, and `GetCppTypeInfo` should eventually be separated from form presentation.
 
 ## UI-only areas already identified
 
@@ -274,12 +235,7 @@ Do not hardcode a Visual Studio installation path. Continue using `vswhere`.
 
 ### Node.js Actions policy
 
-GitHub is deprecating Node.js 20 based actions. The portability workflow therefore uses:
-
-- `actions/checkout@v6` (Node 24 generation)
-- no `ilammy/msvc-dev-cmd@v1`, because that action declares Node 20
-
-Prefer shell/compiler setup over adding old third-party actions when the runner already contains the necessary tooling.
+GitHub is deprecating Node.js 20 based actions. The portability workflow therefore uses `actions/checkout@v6` and no `ilammy/msvc-dev-cmd@v1`. Prefer shell/compiler setup over adding old third-party actions when the runner already contains the necessary tooling.
 
 ## Run history milestones
 
@@ -297,7 +253,8 @@ Only milestone runs matter; intermediate runs may be cancelled by concurrency.
 - Run #25: green through FPU stack helpers and `CheckPrototype()`.
 - Run #26: red only because `cfImport`, `ikFloat`, `ikLString`, and `ikRecord` were missing.
 - Run #27: green through the complete `TDecompiler::Init()` implementation.
-- Next active milestone: compile the independent `GetBJLRange()` branch-analysis slice.
+- Run #30: red only because the isolated `GetBJLRange()` slice lacked the declaration of global core helper `BranchGetPrevInstructionType()` from `Misc.h`.
+- Next active milestone: retry `GetBJLRange()` with that core helper declaration exposed without including VCL-heavy `Misc.h`.
 
 Do not fetch old workflow logs repeatedly. Use the already documented result unless a later run changes the conclusion. Fetch a failed run log once, analyze the complete failure from that result, and fetch again only for a new run.
 

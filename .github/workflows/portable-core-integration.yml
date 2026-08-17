@@ -1,0 +1,50 @@
+name: Portable core integration
+
+on:
+  push:
+    branches:
+      - agent/portable-core-integration
+    paths-ignore:
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: portable-core-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  msvc-x86-core-link:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare portable Disasm.cpp
+        shell: pwsh
+        run: .\tests\prepare_portable_disasm.ps1
+
+      - name: Compile integrated core objects
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrCoreServices.cpp /Fo:IdrCoreServices.obj
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrImageContext.cpp /Fo:IdrImageContext.obj
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_core_link_probe.cpp /Fo:idr_core_link_probe.obj
+          cl /nologo /std:c++17 /W3 /EHsc /I. /c tests\generated\Disasm.portable.cpp /Fo:Disasm.portable.obj
+
+      - name: Link integrated core probe
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
+          link /nologo /subsystem:console /out:idr-core-link-probe.exe IdrCoreServices.obj IdrImageContext.obj idr_core_link_probe.obj Disasm.portable.obj > link-output.txt 2>&1
+          if errorlevel 1 (
+            for /f "usebackq delims=" %%L in ("link-output.txt") do echo ::error title=MSVC linker::%%L
+            type link-output.txt
+            exit /b 1
+          )
+          type link-output.txt
+
+      - name: Run linked probe
+        shell: cmd
+        run: .\idr-core-link-probe.exe

@@ -2,7 +2,9 @@
 
 #include <Windows.h>
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -14,6 +16,12 @@ using String = std::string;
 #ifndef __fastcall
 #define __fastcall
 #endif
+
+class Exception : public std::runtime_error {
+public:
+    explicit Exception(const char *message) : std::runtime_error(message) {}
+    explicit Exception(const String &message) : std::runtime_error(message) {}
+};
 
 class TList {
 public:

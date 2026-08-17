@@ -74,20 +74,19 @@ Current STL-backed `TList` shim supports `Count`, `Items[]`, `Add()`, `Clear()`,
 
 ### Core constants trapped in `Main.h`
 
-Current isolated slices require selected definitions copied into the compatibility layer instead of importing VCL-heavy `Main.h`:
+The compatibility layer now contains only constants reached by tested slices, including the engine additions from run #40:
 
 ```text
-cfImport
-cfPass
-cfLoc
-cfSkip
-ikFloat
-ikLString
-ikRecord
-ikFunc
+cfImport, cfFrame, cfSwitch, cfDSkip, cfPass, cfLoc, cfTry, cfLoop,
+cfFinallyExit, cfSkip,
+ikUnknown, ikFloat, ikLString, ikRecord, ikConstructor, ikDestructor, ikFunc
 ```
 
-This remains evidence for future `CoreTypes.h` / `IdrTypes.h` extraction.
+This increasingly supports a future `CoreTypes.h` / `IdrTypes.h` extraction.
+
+### `Exception`
+
+The initial `std::runtime_error` wrapper was sufficient until the main engine. Run #40 exposed Borland-style catch/rethrow code that reads `Exception::Message`. The shim now stores a public `String Message` initialized alongside the standard exception base.
 
 ## `Disasm.cpp`
 
@@ -124,44 +123,44 @@ This BJL slice is now treated as a stable independently green compile block.
 
 ### Main engine slice
 
-A third independent slice has been added for complete `TDecompiler::Decompile()` only. It begins at:
+The third slice covers complete `TDecompiler::Decompile()` only, ending immediately before `DecompileCaseEnum()`.
 
-```cpp
-DWord __fastcall TDecompiler::Decompile(...)
+Run #40 hit the MSVC 100-error cap. The errors were highly repetitive and fell into a few dependency families rather than 100 separate portability problems. No VCL symbol appeared in the observed batch.
+
+First batch exposed explicitly in the engine generator:
+
+```text
+Adr2Pos / Pos2Adr
+Val2Str8
+IsFlagSet / SetFlag / SetFlags / ClearFlag
+GetProcSize / GetInfoRec / GetNearestUpInstruction
+GetDecompilerRegisterName
+InitItem
+IsIntOver / IsExit / IsValidCodeAdr
+SameText
+IsInheritsByProcName / ExtractProcName
+GetDirectCondition / BranchGetPrevInstructionType
+IsInt64ComparisonViaStack1 / IsInt64ComparisonViaStack2
+Disasm / Code
 ```
 
-and stops immediately before:
+This is a compile-surface extraction only. Implementations remain in the original source tree and are not duplicated into the smoke harness.
 
-```cpp
-DWord __fastcall TDecompiler::DecompileCaseEnum(...)
-```
-
-Generator: `tests/prepare_portable_decompiler_engine_slice.ps1`.
-
-The CI workflow now compiles `tests/generated/Decompiler.engine.slice.cpp` as a separate object after the primary and BJL slices. This split is deliberate: the main engine is expected to expose a much larger helper/global dependency surface, and failures there should not obscure the already-proven BJL portability.
-
-Triggering workflow commit: `c79fc41c60f64ebfbbb143355641fafc854a3ff5`.
+The `SimulateInstr1()` diagnostic seen in #40 is not yet treated as a real signature bug because it occurred while `Disasm` itself was undeclared; original call sites use the declared two-argument form. Re-evaluate only if the diagnostic survives after dependency declarations are visible.
 
 ## Mixed-responsibility headers
 
 ### `Main.h`
 
-Contains both core structs/constants and VCL GUI state. Future split should move reusable definitions to a neutral header consumed by both core and GUI.
+Contains both core structs/constants and VCL GUI state. The main-engine dependency batch makes the case for a neutral core definitions header stronger.
 
 ### `Misc.h`
 
-Contains pure analysis helpers alongside `TForm`, `TCanvas`, clipboard and dialog helpers. The #30 -> #31 transition proved analysis dependencies can be exposed independently.
+Contains pure analysis helpers alongside `TForm`, `TCanvas`, clipboard and dialog helpers. The engine uses many of those pure helpers without needing the UI half, strengthening the case for a separate core-analysis API header.
 
 ### `TypeInfo2.*`
 
 Contains useful RTTI logic mixed with a VCL form. Later extraction candidates include `Guid2String`, `GetRTTI`, and `GetCppTypeInfo`.
-
-### UI-only / initially excluded
-
-- `InputDlg.*`
-- `Resources.*`
-- most `.dfm` presentation code
-- direct `FMain_11011981` output plumbing
 
 ## Working rules
 

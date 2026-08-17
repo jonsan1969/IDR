@@ -22,7 +22,7 @@ if ($prefixEnd -lt 0) { throw 'Portable engine prefix marker not found' }
 $prefix = $engine.Substring(0, $prefixEnd)
 
 $numericStringArgs = @(
-    '_offset', '_foffset', '_pow2', '_mod', '_size', '_idx', '_idx1', '_classSize', '_ap', '_adr',
+    '_offset', '_foffset', '_pow2', '_mod', '_size', '_idx', '_idx1', '_classSize', '_ap', '_adr', '_imm',
     '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_itemSrc.IntValue', '_itemDst.IntValue',
     'DisInfo.Immediate', 'DisInfo.Offset', 'DisInfo.Scale'
 )

@@ -129,7 +129,7 @@ int wmain(int argc, wchar_t **argv) {
         }
 
         if (static_cast<unsigned int>(length) >
-            std::numeric_limits<idr::core::DWord>::max() - traceAddress) {
+            (std::numeric_limits<idr::core::DWord>::max)() - traceAddress) {
             ++traceCount;
             break;
         }

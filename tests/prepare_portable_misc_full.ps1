@@ -62,7 +62,9 @@ foreach ($signature in $bridgeOwned) {
     $src = Remove-CppFunction $src $signature
 }
 
-# Presentation/UI-only functions stay outside the portable core.
+# Presentation/UI-only and host utility functions stay outside the portable
+# analysis core. They are not dependencies of TDecompiler and only drag in VCL
+# or unrelated PE/version APIs.
 $guiOwned = @(
     'void __fastcall ScaleForm(TForm *AForm)',
     'void __fastcall Copy2Clipboard(',
@@ -70,7 +72,10 @@ $guiOwned = @(
     'String __fastcall ManualInput(',
     'void __fastcall SaveCanvas(',
     'void __fastcall RestoreCanvas(',
-    'void __fastcall DrawOneItem('
+    'void __fastcall DrawOneItem(',
+    'void __fastcall OutputDecompilerHeader(',
+    'String __fastcall GetModuleVersion(',
+    'bool __fastcall IsBplByExport('
 )
 foreach ($signature in $guiOwned) {
     $src = Remove-CppFunction $src $signature
@@ -93,8 +98,26 @@ $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)
 $src = $src -replace '\bTrue\b', 'true'
 $src = $src -replace '\bFalse\b', 'false'
 $src = $src -replace '\bStrToInt\(', 'PortableStrToInt('
+$src = $src -replace '\bTryStrToInt\(', 'PortableTryStrToInt('
+$src = $src -replace '\bCompareText\(', 'PortableCompareText('
+$src = $src -replace '(?<!Portable)\bTrim\(', 'PortableTrim('
 $src = $src -replace 'UpperCase\(Reg32Tab\[([^\]]+)\]\)', 'PortableUpperCase(String(Reg32Tab[$1]))'
-$src = $src -replace 'String\(Idx - 31\)', 'std::to_string(Idx - 31)'
+$src = $src -replace 'String\(Idx\s*-\s*31\)', 'std::to_string(Idx - 31)'
+$src = $src -replace 'String\(\(int\)\s*Val\)', 'std::to_string(static_cast<int>(Val))'
+
+# The portable bridge represents Variant numerically. The string-Variant path
+# is already handled at the Decompiler seam, so keep this generated Misc copy
+# on its numeric path without inventing a fake Variant class.
+$src = $src -replace 'if \(Val\.Type\(\) == varString\) return VarToStr\(Val\);', ''
+$src = $src -replace 'return VarToStr\(Val\);', 'return std::to_string(static_cast<long long>(Val));'
+$src = $src -replace 'Format\("''%s''", ARRAYOFCONST\(\(\(Char\)Val\)\)\)', 'PortableQuotedChar(Val)'
+
+# std::string::c_str() is const and temporaries may not be modified by strtok.
+$src = $src -replace 'p = AnsiString\(tInfo\.Decl\)\.c_str\(\);', 'String _portableEnumDecl = tInfo.Decl; p = _portableEnumDecl.data();'
+$src = $src -replace 'pDecl = AnsiString\(tInfo\.Decl\)\.c_str\(\);', 'String _portableSetDecl = tInfo.Decl; pDecl = _portableSetDecl.data();'
+
+# Chained temporary .Trim() calls are not caught by the simple member regex.
+$src = $src -replace 'String\(b\)\.Trim\(\)', 'PortableTrim(String(b))'
 
 $prefix = @'
 #include <algorithm>
@@ -111,11 +134,33 @@ $prefix = @'
 #endif
 
 // Pure records historically declared in Main.h and used by Misc analysis.
+struct SegmentInfo { DWord Start; DWord Size; DWord Flags; String Name; };
+using PSegmentInfo = SegmentInfo *;
 struct TypeRec { Byte kind; DWord adr; String name; };
 using PTypeRec = TypeRec *;
 struct CaseInfo { int caseno; int count; };
 struct VmtListRec { int height; DWord vmtAdr; String vmtName; };
 using PVmtListRec = VmtListRec *;
+struct ExportNameRec { String name; DWord address; Word ord; };
+using PExportNameRec = ExportNameRec *;
+struct ImportNameRec { String module; String name; DWord address; };
+using PImportNameRec = ImportNameRec *;
+struct UnitRec {
+    bool trivial = false;
+    bool trivialIni = false;
+    bool trivialFin = false;
+    bool kb = false;
+    int fromAdr = 0;
+    int toAdr = 0;
+    int finadr = 0;
+    int finSize = 0;
+    int iniadr = 0;
+    int iniSize = 0;
+    float matchedPercent = 0;
+    int iniOrder = 0;
+    TStringList *names = nullptr;
+};
+using PUnitRec = UnitRec *;
 
 PTypeRec __fastcall GetOwnTypeByName(String AName);
 String __fastcall IntToHex(__int64 value, int digits);
@@ -152,12 +197,34 @@ String PortableUpperCase(String text) {
 }
 int PortableStrToInt(const String &text) {
     if (text.empty()) return 0;
-    std::size_t used = 0;
     const int base = text[0] == '$' ? 16 : 10;
     const char *start = text.c_str() + (base == 16 ? 1 : 0);
-    const long value = std::strtol(start, nullptr, base);
-    (void)used;
-    return static_cast<int>(value);
+    return static_cast<int>(std::strtol(start, nullptr, base));
+}
+bool PortableTryStrToInt(const String &text, int &value) {
+    if (text.empty()) return false;
+    char *end = nullptr;
+    const int base = text[0] == '$' ? 16 : 10;
+    const char *start = text.c_str() + (base == 16 ? 1 : 0);
+    const long parsed = std::strtol(start, &end, base);
+    if (end == start || *end != '\0') return false;
+    value = static_cast<int>(parsed);
+    return true;
+}
+int PortableCompareText(const String &left, const String &right) {
+    String a = left;
+    String b = right;
+    std::transform(a.begin(), a.end(), a.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    std::transform(b.begin(), b.end(), b.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
+}
+String PortableQuotedChar(int value) {
+    String result = "'";
+    result.push_back(static_cast<char>(value));
+    result.push_back('\'');
+    return result;
 }
 
 '@

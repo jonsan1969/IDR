@@ -15,6 +15,33 @@ using String = std::string;
 using AnsiString = std::string;
 using Variant = std::int64_t;
 
+// C++Builder numeric types reached by the remaining Decompiler helpers.
+// These are compile-smoke representations only; runtime conversion semantics
+// are deliberately deferred to the real portable compatibility layer.
+using Comp = std::int64_t;
+struct Currency {
+    std::int64_t Val = 0;
+};
+
+#ifndef FT_SINGLE
+#define FT_SINGLE 0
+#endif
+#ifndef FT_REAL
+#define FT_REAL 1
+#endif
+#ifndef FT_DOUBLE
+#define FT_DOUBLE 2
+#endif
+#ifndef FT_COMP
+#define FT_COMP 3
+#endif
+#ifndef FT_CURRENCY
+#define FT_CURRENCY 4
+#endif
+#ifndef FT_EXTENDED
+#define FT_EXTENDED 5
+#endif
+
 class WideString : public std::wstring {
 public:
     using std::wstring::wstring;
@@ -116,6 +143,9 @@ public:
 #endif
 #ifndef ikRecord
 #define ikRecord 0x0E
+#endif
+#ifndef ikInterface
+#define ikInterface 0x0F
 #endif
 #ifndef ikInt64
 #define ikInt64 0x10

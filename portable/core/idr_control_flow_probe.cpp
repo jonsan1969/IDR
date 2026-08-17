@@ -63,12 +63,24 @@ int main() {
     std::size_t callEdges = 0;
     std::size_t branchTakenEdges = 0;
     std::size_t fallThroughEdges = 0;
+    std::size_t entryOwnedEdges = 0;
+    std::size_t targetAOwnedEdges = 0;
+    std::size_t targetBOwnedEdges = 0;
+    std::size_t unknownOwnedEdges = 0;
     for (const auto &edge : result.edges) {
         switch (edge.kind) {
             case ControlFlowEdgeKind::Call: ++callEdges; break;
             case ControlFlowEdgeKind::BranchTaken: ++branchTakenEdges; break;
             case ControlFlowEdgeKind::FallThrough: ++fallThroughEdges; break;
         }
+        if (edge.procedure == kBase)
+            ++entryOwnedEdges;
+        else if (edge.procedure == kTargetA)
+            ++targetAOwnedEdges;
+        else if (edge.procedure == kTargetB)
+            ++targetBOwnedEdges;
+        else
+            ++unknownOwnedEdges;
     }
 
     if (result.entryBlocks.size() != 3 ||
@@ -76,7 +88,8 @@ int main() {
         result.candidates.size() != 2 ||
         result.discoveredCandidateCount != 2 ||
         result.edges.size() != 5 ||
-        callEdges != 3 || branchTakenEdges != 1 || fallThroughEdges != 1) {
+        callEdges != 3 || branchTakenEdges != 1 || fallThroughEdges != 1 ||
+        entryOwnedEdges != 3 || targetAOwnedEdges != 2 || targetBOwnedEdges != 0 || unknownOwnedEdges != 0) {
         std::cerr << "control-flow probe produced unexpected graph shape\n";
         return 2;
     }
@@ -107,5 +120,8 @@ int main() {
     std::cout << "call-edge-count=" << callEdges << '\n';
     std::cout << "branch-taken-edge-count=" << branchTakenEdges << '\n';
     std::cout << "fallthrough-edge-count=" << fallThroughEdges << '\n';
+    std::cout << "entry-owned-edge-count=" << entryOwnedEdges << '\n';
+    std::cout << "target-a-owned-edge-count=" << targetAOwnedEdges << '\n';
+    std::cout << "target-b-owned-edge-count=" << targetBOwnedEdges << '\n';
     return 0;
 }

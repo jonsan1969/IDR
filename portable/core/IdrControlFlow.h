@@ -41,6 +41,7 @@ enum class ControlFlowEdgeKind {
 };
 
 struct ControlFlowEdge {
+    DWord procedure = 0;
     DWord from = 0;
     DWord to = 0;
     ControlFlowEdgeKind kind = ControlFlowEdgeKind::BranchTaken;
@@ -150,7 +151,7 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
                     if (targetOffset >= 0) {
                         if (!analysis.SetFlag(CodeFlags::Loc, static_cast<std::size_t>(targetOffset)))
                             return fail("cannot mark control-flow target state");
-                        result.edges.push_back({address, decoded.target,
+                        result.edges.push_back({procedureAddress, address, decoded.target,
                                                 decoded.call ? ControlFlowEdgeKind::Call
                                                              : ControlFlowEdgeKind::BranchTaken});
                         if (decoded.call)
@@ -169,7 +170,8 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
 
                 if (decoded.branch) {
                     if (decoded.conditional && AddressToOffset(fallThrough) >= 0) {
-                        result.edges.push_back({address, fallThrough, ControlFlowEdgeKind::FallThrough});
+                        result.edges.push_back({procedureAddress, address, fallThrough,
+                                                ControlFlowEdgeKind::FallThrough});
                         enqueueBlock(fallThrough);
                     }
                     break;

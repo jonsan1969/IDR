@@ -14,7 +14,9 @@ $bodyPush = Get-MethodBody 'TDecompiler::SimulatePush(' 'void __fastcall '
 $bodyPop = Get-MethodBody 'TDecompiler::SimulatePop(' 'void __fastcall '
 $bodyFloat = Get-MethodBody 'TDecompiler::SimulateFloatInstruction(' 'void __fastcall '
 $bodyFormat = Get-MethodBody 'TDecompiler::SimulateFormatCall(' 'void __fastcall '
-$body = $bodyPush + $bodyPop + $bodyFloat + $bodyFormat
+$bodyMarkCase = Get-MethodBody 'TDecompiler::MarkCaseEnum(' 'void __fastcall '
+$bodyMarkGeneral = Get-MethodBody 'TDecompiler::MarkGeneralCase(' 'void __fastcall '
+$body = $bodyPush + $bodyPop + $bodyFloat + $bodyFormat + $bodyMarkCase + $bodyMarkGeneral
 
 & "$PSScriptRoot\prepare_portable_decompiler_engine_slice.ps1"
 $engine = Get-Content -Raw -LiteralPath "$PSScriptRoot\generated\Decompiler.engine.slice.cpp"

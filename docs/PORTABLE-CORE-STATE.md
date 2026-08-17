@@ -40,6 +40,7 @@ Successfully compiled on GitHub-hosted MSVC x86:
 - complete independent BJL/branch-analysis slice from `GetBJLRange()` through `PrintBJL()`
 - complete independent main-engine slice containing all of `TDecompiler::Decompile()`
 - complete `TDecompiler::DecompileCaseEnum()` slice
+- complete syscall slice containing `GetSysCallAlias()` and `SimulateSysCall()`
 
 ### Primary decompiler milestone
 
@@ -77,15 +78,25 @@ A fourth independent implementation slice isolates complete `TDecompiler::Decomp
 
 Known numeric case-label construction (`String(n + N)` / `String(m + N)`) is translated narrowly to `std::to_string(...)` in the generated smoke copy. The original source remains unchanged.
 
-- #51: **complete `TDecompiler::DecompileCaseEnum()` compiles successfully with MSVC x86**. Job metadata confirmed all workflow steps green; no successful-run log was fetched.
+- #51: **complete `TDecompiler::DecompileCaseEnum()` compiles successfully with MSVC x86**. Job metadata confirmed all workflow steps green.
 
-## Current active test: syscall simulation slice
+## Syscall simulation milestone
 
-A fifth independent slice now covers `TDecompiler::GetSysCallAlias()` and complete `TDecompiler::SimulateSysCall()`, stopping immediately before `SimulateCall()`.
+A fifth independent slice covers `TDecompiler::GetSysCallAlias()` and complete `TDecompiler::SimulateSysCall()`.
 
-The syscall generator reuses the already-proven prefix from the main engine generator rather than duplicating its large declaration surface. Known numeric `String(...)` forms and already-mapped `SubString()` / `Length()` behavior are transformed only in the generated copy.
+The syscall generator reuses the already-proven prefix from the main engine generator rather than duplicating its large declaration surface.
 
-Keeping this slice independent preserves the #49 main-engine and #51 case-enum milestones while mapping runtime/syscall reconstruction separately.
+- #53-#56: harness-only boundary/marker failures while making the source slicing robust; no syscall compiler result yet.
+- #57: first real syscall compile. Missing surface was small: `GetTypeName(DWord)`, `FT_EXTENDED`, plus three already-known `String::Pos()` cases.
+- #58: **complete `GetSysCallAlias()` + `SimulateSysCall()` compile successfully with hosted MSVC x86**. Every workflow step was green, including the complete main engine, case-enum, syscall and `Disasm.cpp` slices.
+
+This is significant because syscall/runtime helper reconstruction is now compiler-portable using the same neutral dependency surface as the main engine rather than a VCL/Embarcadero environment.
+
+## Current active test: call simulation slice
+
+A sixth independent slice now covers `TDecompiler::SimulateInherited()` plus complete `TDecompiler::SimulateCall()`.
+
+It reuses the proven engine prefix and applies only already-observed String compatibility transforms in the generated smoke copy. Keeping this separate preserves #58 as a stable syscall milestone while mapping call-resolution and argument/return reconstruction independently.
 
 ### Engine GUI/interactivity boundary
 
@@ -120,11 +131,11 @@ Compiler-verified String/RTL differences currently mapped or exposed in generate
 
 ### `Main.h`
 
-Mixes core records/constants with VCL GUI state. Runs through #51 strongly support extracting reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
+Mixes core records/constants with VCL GUI state. Current runs strongly support extracting reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
 
 ### `Misc.h`
 
-Mixes pure analysis helpers with forms/canvas/dialog helpers. The main engine uses many pure helpers without needing the UI half, strengthening the case for a separate core-analysis API header.
+Mixes pure analysis helpers with forms/canvas/dialog helpers. The main engine and syscall simulator use many pure helpers without needing the UI half, strengthening the case for a separate core-analysis API header.
 
 ### GUI boundary after `TDecompiler::Init()`
 

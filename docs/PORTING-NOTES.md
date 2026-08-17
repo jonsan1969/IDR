@@ -32,8 +32,11 @@ Do not fetch successful run logs. For a failing run, fetch the log once, analyze
 - `tests/prepare_portable_decompiler_branch_slice.ps1`
 - `tests/prepare_portable_decompiler_engine_slice.ps1`
 - `tests/prepare_portable_decompiler_case_slice.ps1`
+- `tests/prepare_portable_decompiler_syscall_slice.ps1`
 
 Generated transformed files live under `tests/generated` during CI. Original IDR source remains unchanged.
+
+The syscall slice deliberately reuses the generated prefix from `prepare_portable_decompiler_engine_slice.ps1`; this avoids duplicating and drifting the large set of core declarations already proven by #49.
 
 ## Compatibility layer
 
@@ -139,7 +142,7 @@ This is an object-compilation portability milestone, not yet proof of runtime se
 
 ### Case-enum slice
 
-A fourth independent slice now covers complete `TDecompiler::DecompileCaseEnum()` through the boundary before `GetSysCallAlias()`.
+A fourth independent slice covers complete `TDecompiler::DecompileCaseEnum()` through the boundary before `GetSysCallAlias()`.
 
 Known Embarcadero numeric case-label forms:
 
@@ -148,7 +151,17 @@ String(n + N)
 String(m + N)
 ```
 
-are mapped narrowly to `std::to_string(...)` in the generated smoke copy. Keeping this separate preserves the stable #49 engine block while mapping the next algorithmic region.
+are mapped narrowly to `std::to_string(...)` in the generated smoke copy.
+
+#### Run #51 — case-enum green
+
+Complete `TDecompiler::DecompileCaseEnum()` compiles successfully under hosted MSVC x86. Job metadata confirmed all steps green; no successful-run log was fetched.
+
+### Syscall slice
+
+A fifth independent slice now covers `GetSysCallAlias()` plus complete `SimulateSysCall()`, ending before `SimulateCall()`.
+
+The generator reuses the already-proven engine prefix/declarations and applies only the String transforms already justified by previous compiler results. This keeps syscall-specific failures attributable to that block rather than to duplicated harness state.
 
 ## Mixed-responsibility headers
 

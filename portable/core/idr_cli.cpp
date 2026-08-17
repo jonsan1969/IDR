@@ -26,6 +26,16 @@ void PrintTraceAddress(std::size_t index, idr::core::DWord address) {
               << std::dec << std::setfill(' ');
 }
 
+void PrintEdge(std::size_t index, const char *kind,
+               idr::core::DWord from, idr::core::DWord to) {
+    std::cout << "edge[" << index << "] kind=" << kind
+              << " from=0x" << std::uppercase << std::hex
+              << std::setw(8) << std::setfill('0') << from
+              << " to=0x" << std::setw(8) << to
+              << std::dec << std::setfill(' ')
+              << " state=mapped\n";
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t **argv) {
@@ -71,6 +81,11 @@ int wmain(int argc, wchar_t **argv) {
         return 6;
     }
 
+    const int entryDirectTargetOffset =
+        (entryInfo.Call && entryInfo.Immediate != 0)
+            ? idr::core::AddressToOffset(entryInfo.Immediate)
+            : -1;
+
     std::cout << "IDR portable CLI\n";
     std::cout << "file=" << target.u8string() << '\n';
     PrintHex("image-base", image.imageBase);
@@ -100,6 +115,7 @@ int wmain(int argc, wchar_t **argv) {
     constexpr std::size_t kTraceLimit = 8;
     idr::core::DWord traceAddress = session.entryPoint;
     std::size_t traceCount = 0;
+    std::size_t edgeCount = 0;
 
     for (; traceCount < kTraceLimit; ++traceCount) {
         const int offset = idr::core::AddressToOffset(traceAddress);
@@ -118,10 +134,31 @@ int wmain(int argc, wchar_t **argv) {
             return 7;
         }
 
+        if (info.Call && !analysis.SetFlag(idr::core::CodeFlags::Call, pos)) {
+            std::cerr << "idr-cli: cannot mark call instruction state\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 8;
+        }
+
         PrintTraceAddress(traceCount, traceAddress);
         std::cout << " len=" << length
                   << " mnemonic=" << info.Mnem
                   << " disasm=" << line << '\n';
+
+        if ((info.Call || info.Branch) && info.Immediate != 0) {
+            const int targetOffset = idr::core::AddressToOffset(info.Immediate);
+            if (targetOffset >= 0) {
+                if (!analysis.SetFlag(idr::core::CodeFlags::Loc,
+                                      static_cast<std::size_t>(targetOffset))) {
+                    std::cerr << "idr-cli: cannot mark control-flow target state\n";
+                    idr::core::ResetLegacyLoadedPeSession();
+                    return 9;
+                }
+                PrintEdge(edgeCount, info.Call ? "call" : "branch",
+                          traceAddress, info.Immediate);
+                ++edgeCount;
+            }
+        }
 
         if (info.Ret || (info.Branch && !info.Conditional)) {
             ++traceCount;
@@ -139,7 +176,7 @@ int wmain(int argc, wchar_t **argv) {
     if (traceCount == 0) {
         std::cerr << "idr-cli: entry trace produced no instructions\n";
         idr::core::ResetLegacyLoadedPeSession();
-        return 8;
+        return 10;
     }
 
     const int entryOffset = idr::core::AddressToOffset(session.entryPoint);
@@ -150,10 +187,24 @@ int wmain(int argc, wchar_t **argv) {
     if ((entryFlags & requiredEntryFlags) != requiredEntryFlags) {
         std::cerr << "idr-cli: legacy flags view did not observe entry trace state\n";
         idr::core::ResetLegacyLoadedPeSession();
-        return 9;
+        return 11;
+    }
+
+    if (entryDirectTargetOffset >= 0) {
+        const auto targetFlags = session.flags
+            ? session.flags[static_cast<std::size_t>(entryDirectTargetOffset)]
+            : 0;
+        if (edgeCount == 0 ||
+            (entryFlags & idr::core::CodeFlags::Call) == 0 ||
+            (targetFlags & idr::core::CodeFlags::Loc) == 0) {
+            std::cerr << "idr-cli: direct entry call did not propagate control-flow state\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 12;
+        }
     }
 
     std::cout << "trace-count=" << traceCount << '\n';
+    std::cout << "edge-count=" << edgeCount << '\n';
     std::cout << "entry-flags=0x"
               << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << entryFlags
               << std::dec << std::setfill(' ') << '\n';

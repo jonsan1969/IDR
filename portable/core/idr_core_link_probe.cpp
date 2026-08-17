@@ -63,15 +63,28 @@ int main() {
     if (idr::core::GetNearestUpInstruction(nav, 5) != -1) return 31;
 
     std::array<Byte, 9> image{{
-        0x90,                         // 0: nop
-        0x64, 0xA1, 0, 0, 0, 0,     // 1: mov eax, fs:[00000000]
-        0x90,                         // 7: nop
-        0xC3                          // 8: ret
+        0x90,
+        0x64, 0xA1, 0, 0, 0, 0,
+        0x90,
+        0xC3
     }};
+
+    idr::core::SetImageSegments(
+        {image.data(), image.size(), 0},
+        {{0x00401000, 4, 0},
+         {0x00500000, 0x10, idr::core::SegmentFlags::Unbacked},
+         {0x00402000, 5, 0}});
+    if (idr::core::AddressToOffset(0x00401002) != 2) return 32;
+    if (idr::core::AddressToOffset(0x00402002) != 6) return 33;
+    if (idr::core::AddressToOffset(0x00500004) != -1) return 34;
+    if (idr::core::AddressToOffset(0x00600000) != -2) return 35;
+    const auto segmentedAddress = idr::core::OffsetToAddress(6);
+    if (!segmentedAddress || *segmentedAddress != 0x00402002) return 36;
+
     idr::core::SetImageView({image.data(), image.size(), 0x00401000});
-    if (idr::core::AddressToOffset(0x00401001) != 1) return 32;
+    if (idr::core::AddressToOffset(0x00401001) != 1) return 37;
     const auto address = idr::core::OffsetToAddress(8);
-    if (!address || *address != 0x00401008) return 33;
+    if (!address || *address != 0x00401008) return 38;
 
     idr::core::AnalysisState decoded(image.size());
     decoded.SetFlag(idr::core::CodeFlags::Instruction, 0);
@@ -80,12 +93,12 @@ int main() {
     decoded.SetFlag(idr::core::CodeFlags::Instruction, 8);
 
     MDisasm disasm;
-    if (!disasm.Init()) return 34;
-    if (idr::core::GetNearestUpPrefixFs(decoded, disasm, 8) != 1) return 35;
-    if (idr::core::GetNearestUpInstructionMatching(decoded, disasm, 8, 0, "mov") != 1) return 36;
-    if (idr::core::GetNearestUpInstructionMatching(decoded, disasm, 8, 0, "push", "mov") != 1) return 37;
-    if (idr::core::GetNearestDownInstruction(decoded, disasm, 0) != 1) return 38;
-    if (idr::core::GetNearestDownInstructionMatching(decoded, disasm, 0, "ret") != 8) return 39;
+    if (!disasm.Init()) return 39;
+    if (idr::core::GetNearestUpPrefixFs(decoded, disasm, 8) != 1) return 40;
+    if (idr::core::GetNearestUpInstructionMatching(decoded, disasm, 8, 0, "mov") != 1) return 41;
+    if (idr::core::GetNearestUpInstructionMatching(decoded, disasm, 8, 0, "push", "mov") != 1) return 42;
+    if (idr::core::GetNearestDownInstruction(decoded, disasm, 0) != 1) return 43;
+    if (idr::core::GetNearestDownInstructionMatching(decoded, disasm, 0, "ret") != 8) return 44;
 
     const auto op = disasm.GetOp(const_cast<char *>("mov"));
     std::cout << "portable-core link probe: OP_MOV=" << static_cast<int>(op)
@@ -93,6 +106,7 @@ int main() {
               << ", type=" << idr::core::TrimTypeName("System.Integer")
               << ", flags=" << state.Size()
               << ", nearest=" << idr::core::GetNearestUpInstruction(nav, 9)
-              << ", fs=" << idr::core::GetNearestUpPrefixFs(decoded, disasm, 8) << '\n';
-    return op == OP_MOV ? 0 : 40;
+              << ", fs=" << idr::core::GetNearestUpPrefixFs(decoded, disasm, 8)
+              << ", segmented=00402002->6\n";
+    return op == OP_MOV ? 0 : 45;
 }

@@ -10,6 +10,10 @@ $body = $src.Substring($start, $end - $start)
 $body = $body -replace 'String\(m \+ 1\)', 'std::to_string(m + 1)'
 $body = $body -replace 'String\(m\)', 'std::to_string(m)'
 
+# Embarcadero String::Length() maps to std::string::size() for the ANSI text
+# semantics exercised by this compile-only BJL slice.
+$body = $body -replace '\.Length\(\)', '.size()'
+
 $prefix = @'
 #include <cassert>
 #include "portable_core_compat.h"

@@ -74,7 +74,9 @@ using DWord = std::uint32_t;
 using String = std::string;
 ```
 
-`String = std::string` is currently sufficient for the tested code, but this does not prove semantic equivalence for all IDR code. Borland/Embarcadero `String` indexing, integer conversion and Unicode behavior may require a more careful compatibility type later.
+`String = std::string` is sufficient for a large amount of the tested code, but run #33 proved a concrete semantic mismatch: Embarcadero `String(int)` converts an integer to textual decimal representation, while `std::string` has no equivalent one-argument integer constructor. The generated BJL smoke slice now translates the observed `String(m)` / `String(m + 1)` calls to `std::to_string(...)`. This is deliberately a narrow transformation; do not introduce a full custom String wrapper until more required semantics have been mapped.
+
+Other known String semantics still to watch include 1-based indexing, `Pos()`, `SubString()`, case-insensitive helpers, and Unicode behavior.
 
 ### `__fastcall`
 
@@ -190,9 +192,9 @@ Run #30 reached this branch-analysis compile and failed only because `BranchGetP
 
 Run #31 was fully green after declaring only that helper. This proves the complete `GetBJLRange()` implementation compiles under MSVC x86 without pulling in `Misc.h` or VCL.
 
-The slice is now expanded through the complete `CreateBJLSequence()` function. Its demonstrated container needs are `TList::Clear()` and `TList::Delete(index)`, now implemented in the STL-backed shim.
+The slice was then expanded through the complete `CreateBJLSequence()` function. `TList::Clear()` and `TList::Delete(index)` compiled successfully; run #33 reached the BJL expression-numbering code and failed only on Embarcadero numeric String construction (`String(m)` and `String(m + 1)`). This is the first compiler-verified point where `using String = std::string` is not source-compatible with IDR semantics.
 
-A likely next portability boundary is Borland string integer construction in expressions such as `String(m)`. The current `String = std::string` compile shim is not guaranteed to reproduce that behavior; let the next compiler run establish whether an adapter or source transformation is required.
+The generated smoke copy now preserves those observed numeric conversions using `std::to_string(...)`. Original IDR source remains unchanged.
 
 ## `Main.h`
 
@@ -255,7 +257,8 @@ Only milestone runs matter; intermediate runs may be cancelled by concurrency.
 - Run #27: green through the complete `TDecompiler::Init()` implementation.
 - Run #30: red only because the isolated `GetBJLRange()` slice lacked the declaration of global core helper `BranchGetPrevInstructionType()` from `Misc.h`.
 - Run #31: green through the complete `GetBJLRange()` implementation.
-- Next active milestone: compile branch-analysis slice through `CreateBJLSequence()` with `TList::Clear()` / `Delete()` and explicit condition-helper declarations.
+- Run #33: red only on numeric Embarcadero `String(int)` construction inside `CreateBJLSequence()`; list mutation and preceding BJL logic compiled.
+- Next active milestone: retry the complete `CreateBJLSequence()` slice with those numeric String conversions translated to `std::to_string()` in the generated smoke copy.
 
 Do not fetch old workflow logs repeatedly. Use the already documented result unless a later run changes the conclusion. Fetch a failed run log once, analyze the complete failure from that result, and fetch again only for a new run.
 

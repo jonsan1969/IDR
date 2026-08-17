@@ -1,6 +1,6 @@
 $src = Get-Content -Raw -LiteralPath "$PSScriptRoot\..\Decompiler.cpp"
 $start = $src.IndexOf('bool __fastcall TDecompileEnv::GetBJLRange(')
-$end = $src.IndexOf('bool __fastcall TDecompileEnv::BJLGetIdx(', $start)
+$end = $src.IndexOf('String __fastcall TDecompileEnv::PrintBJL()', $start)
 if ($start -lt 0 -or $end -lt 0) { throw 'Decompiler branch slice markers not found' }
 $body = $src.Substring($start, $end - $start)
 

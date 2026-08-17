@@ -80,12 +80,12 @@ $src = $src -replace '\bFalse\b', 'false'
 $numericStringArgs = @(
     '_div', '_mod', '_pow2', '_offset', '-_offset', '_imm', '_argsNum', '_retBytes',
     '_cnt', '_k', '-_k', '_N', '_N1', '_N2', '_N1 - _N2', '_N1 - 1',
-    'm', 'm + 1', 'n + N', 'n + N + 1',
+    'k', 'k + 1', 'm', 'm + 1', 'n + N', 'n + N + 1',
     '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_item4.IntValue',
     'item.IntValue', 'item1.IntValue', 'item2.IntValue',
     'DisInfo.Immediate', 'DisInfo.Offset', 'DisInfo.Scale',
     '_disInfo.Immediate', '_disInfo.Offset', '_disInfo.Scale',
-    'intTo - 1', 'intTo + 1', '_offset + 1',
+    'intTo - 1', 'intTo + 1', '_offset + 1', '_offset - _foffset',
     'Env->Stack[varIdxInfo.IdxValue].IntValue',
     'Env->Stack[cntIdxInfo.IdxValue].IntValue'
 )
@@ -97,6 +97,7 @@ $src = $src -replace 'CmpInfo\.R = 0;', 'CmpInfo.R = "0";'
 $src = $src -replace 'GetDecompilerRegisterName\(_reg1Idx\) \+ " := " \+ _offset \+ ";"', 'GetDecompilerRegisterName(_reg1Idx) + " := " + std::to_string(_offset) + ";"'
 $src = $src -replace '_line \+= _item2\.IntValue;', '_line += std::to_string(_item2.IntValue);'
 $src = $src -replace '_currVal\.operator String\(\)', 'PortableCurrencyToString(_currVal)'
+$src = $src -replace 'GetEnumerationString\(_typeName, _itemBase\.Value\)', 'PortableGetEnumerationString(_typeName, _itemBase.Value)'
 
 # GUI-owned analysis hooks become narrow compile-time seams in the generated TU.
 $src = $src -replace 'FMain_11011981->GetMethodInfo\(', 'PortableGetMethodInfo('
@@ -129,6 +130,7 @@ String PortableSubString(const String &text, int start, int count) {
 bool PortableConfirmEmbeddedProcedure(const String &address);
 PMethodRec PortableGetMethodInfo(DWord classAdr, char kind, int offset);
 String PortableCurrencyToString(const Currency &value);
+String PortableGetEnumerationString(const String &typeName, const String &value);
 
 String __fastcall IntToStr(__int64 value);
 String __fastcall IntToHex(__int64 value, int digits);

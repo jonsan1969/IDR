@@ -26,7 +26,7 @@ $engine = Get-Content -Raw -LiteralPath "$PSScriptRoot\generated\Decompiler.engi
 $prefixEnd = $engine.IndexOf('DWord __fastcall TDecompiler::Decompile(')
 if ($prefixEnd -lt 0) { throw 'Portable engine prefix marker not found' }
 $prefix = $engine.Substring(0, $prefixEnd)
-$prefix += "`nString __fastcall GetGvarName(DWord adr);`n"
+$prefix += "`nString __fastcall GetGvarName(DWord adr);`nString __fastcall GetInvertCondition(char c);`n"
 
 $numericStringArgs = @(
     '_offset', '_foffset', '_pow2', '_mod', '_size', '_sz', '_ofs', '_idx', '_idx1', '_classSize', '_ap', '_adr', '_ea', '_cmpRes', '_len', '_N', '_N1',

@@ -30,6 +30,24 @@ jobs:
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
           cl /nologo /std:c++17 /W4 /EHsc /c tests\portable_kb_header_smoke.cpp /Fo:portable_kb_header_smoke.obj
 
+      - name: Compile Infos header smoke test
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
+          cl /nologo /std:c++17 /W4 /EHsc /c tests\portable_infos_header_smoke.cpp /Fo:portable_infos_header_smoke.obj
+
+      - name: Prepare portable Decompiler header copy
+        shell: pwsh
+        run: .\tests\prepare_portable_decompiler.ps1
+
+      - name: Compile Decompiler header smoke test
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
+          cl /nologo /std:c++17 /W4 /EHsc /I. /c tests\portable_decompiler_header_smoke.cpp /Fo:portable_decompiler_header_smoke.obj
+
       - name: Prepare portable Disasm.cpp copy
         shell: pwsh
         run: .\tests\prepare_portable_disasm.ps1

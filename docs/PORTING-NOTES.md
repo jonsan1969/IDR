@@ -31,6 +31,7 @@ Do not fetch successful run logs. For a failing run, fetch the log once, analyze
 - `tests/prepare_portable_decompiler_slice.ps1`
 - `tests/prepare_portable_decompiler_branch_slice.ps1`
 - `tests/prepare_portable_decompiler_engine_slice.ps1`
+- `tests/prepare_portable_decompiler_case_slice.ps1`
 
 Generated transformed files live under `tests/generated` during CI. Original IDR source remains unchanged.
 
@@ -45,6 +46,7 @@ Temporary aliases include `Byte`, `Word`, `DWord`, `String = std::string`, `Ansi
 - #38: `AnsiReplaceText(...)` exposed with a narrow compile-time signature.
 - #42: engine reaches `String::Pos()`, `IntToStr`, `IntToHex`, `AnsiString`, and further numeric `String(...)` calls.
 - Later engine mapping also reaches `SubString()`, `SetLength()`, `QuotedStr`, and `WideString` behavior.
+- #48: final engine compile errors were only numeric/String semantic mismatches: `String = 0`, direct integer concatenation, and four `String(_imm)` constructions.
 
 `Pos` and `SubString` helpers preserve Embarcadero's 1-based semantics in generated smoke code. Do not blindly substitute raw `std::string` indexing/find semantics.
 
@@ -117,9 +119,36 @@ Major convergence milestone: no 100-error cap. The remaining compile errors were
 - try-analysis helpers (`IsTryBegin`, `IsTryBegin0`)
 - remaining core flags/kinds (`cfCode`, `cfETable`, `cfFinally`, `cfExcept`, `ikMethod`)
 
-Those categories are now batched into the smoke compatibility layer/generator. Numeric String transforms remain deliberately controlled so legitimate `String(char*)` constructors are not corrupted.
+Those categories were batched into the smoke compatibility layer/generator. Numeric String transforms remain deliberately controlled so legitimate `String(char*)` constructors are not corrupted.
 
-The direction is encouraging: later engine failures are shrinking from broad dependency exposure toward concrete RTL/container semantics rather than discovering large new VCL regions.
+#### Run #48
+
+The dependency wall was gone. Compilation failed on only nine concrete String/numeric compatibility cases:
+
+- four assignments of numeric zero to `String`
+- one direct integer concatenation into a `String` expression
+- four `String(_imm)` constructions in IMUL simulation
+
+No new core helper, flag, container or GUI dependency appeared.
+
+#### Run #49 — main engine green
+
+Complete `TDecompiler::Decompile()` compiles successfully under hosted MSVC x86. Job metadata confirmed every workflow step green; no successful-run log was fetched.
+
+This is an object-compilation portability milestone, not yet proof of runtime semantic equivalence. The original `Decompiler.cpp` remains unchanged; all adaptations are generated smoke transforms or compatibility declarations.
+
+### Case-enum slice
+
+A fourth independent slice now covers complete `TDecompiler::DecompileCaseEnum()` through the boundary before `GetSysCallAlias()`.
+
+Known Embarcadero numeric case-label forms:
+
+```cpp
+String(n + N)
+String(m + N)
+```
+
+are mapped narrowly to `std::to_string(...)` in the generated smoke copy. Keeping this separate preserves the stable #49 engine block while mapping the next algorithmic region.
 
 ## Mixed-responsibility headers
 

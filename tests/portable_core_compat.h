@@ -14,6 +14,14 @@ using DWord = std::uint32_t;
 using String = std::string;
 using AnsiString = std::string;
 
+class WideString : public std::wstring {
+public:
+    using std::wstring::wstring;
+    WideString() = default;
+    WideString(const std::wstring &value) : std::wstring(value) {}
+    const wchar_t *c_bstr() const { return c_str(); }
+};
+
 #ifndef __fastcall
 #define __fastcall
 #endif
@@ -23,6 +31,9 @@ using AnsiString = std::string;
 // harness does not have to pull in the VCL-heavy Main.h.
 #ifndef cfImport
 #define cfImport 0x00000004
+#endif
+#ifndef cfProcStart
+#define cfProcStart 0x00000010
 #endif
 #ifndef cfFrame
 #define cfFrame 0x00000200
@@ -66,6 +77,12 @@ using AnsiString = std::string;
 #ifndef ikFloat
 #define ikFloat 0x04
 #endif
+#ifndef ikString
+#define ikString 0x05
+#endif
+#ifndef ikSet
+#define ikSet 0x06
+#endif
 #ifndef ikClass
 #define ikClass 0x07
 #endif
@@ -87,14 +104,26 @@ using AnsiString = std::string;
 #ifndef ikInt64
 #define ikInt64 0x10
 #endif
+#ifndef ikDynArray
+#define ikDynArray 0x11
+#endif
 #ifndef ikUString
 #define ikUString 0x12
+#endif
+#ifndef ikClassRef
+#define ikClassRef 0x13
+#endif
+#ifndef ikPointer
+#define ikPointer 0x14
 #endif
 #ifndef ikCString
 #define ikCString 0x20
 #endif
 #ifndef ikWCString
 #define ikWCString 0x21
+#endif
+#ifndef ikResString
+#define ikResString 0x22
 #endif
 #ifndef ikVMT
 #define ikVMT 0x23
@@ -110,6 +139,9 @@ using AnsiString = std::string;
 #endif
 #ifndef ikFunc
 #define ikFunc 0x29
+#endif
+#ifndef ikData
+#define ikData 0x2B
 #endif
 
 class Exception : public std::runtime_error {

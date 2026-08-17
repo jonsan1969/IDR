@@ -30,17 +30,25 @@ x86 remains intentional because legacy `Disasm.cpp` contains x86 inline assembly
 
 ## Smoke phase: complete and frozen
 
-`agent/portable-core-smoke` ended with the complete 52/52 `TDecompiler` compile-smoke matrix green. Keep that branch unchanged as regression/reference coverage.
+`agent/portable-core-smoke` ended with complete 52/52 `TDecompiler` compile-smoke coverage. Keep that branch unchanged as regression/reference coverage.
 
-Important smoke conclusion: compile coverage alone did not establish runtime equivalence, especially for Borland 1-based `String` semantics.
+Compile coverage alone does not establish runtime equivalence, especially for Borland 1-based `String` semantics.
 
-## Integration milestones
+## Current milestone: linked and runnable real analysis core
 
-### Clean integration baseline
+Run **#50** succeeded at:
 
-The integration branch was rebuilt directly from `main`, not from the smoke branch, so the real integration work has a clean baseline.
+`242b4a841baeb93abe3eeb0802df262483c10c43` — `Fix portable proc-size offset handling`
 
-### Neutral core layers now present
+The integration workflow now compiles, links and runs one MSVC x86 probe containing the real generated legacy translation units:
+
+- `Disasm.cpp`
+- `KnowledgeBase.cpp`
+- `Infos.cpp`
+- `Misc.cpp`
+- `Decompiler.cpp` minus the three GUI-owned presentation/orchestration methods
+
+alongside the neutral portable layers:
 
 - `IdrCoreTypes`
 - `IdrCoreServices`
@@ -50,97 +58,120 @@ The integration branch was rebuilt directly from `main`, not from the smoke bran
 - `IdrInstructionNav`
 - `IdrDecompilerModel`
 - transitional `IdrLegacyCompat`
+- `IdrLegacyBridge`
 
-### Real `Disasm.cpp` / `dis.dll`
+Verified build/runtime chain:
 
-Run #23 established compile + link + runtime through the real generated `Disasm.cpp` translation unit and the shipped x86 `dis.dll`.
+`generated real legacy TUs -> MSVC x86 objects -> linked console probe -> process execution`
+
+This is the first milestone where the large real analysis dependency chain is not merely compile-represented: it is resolved through the linker and executable on a stock GitHub-hosted runner.
+
+## Integration chronology
+
+### #23: real decoder runtime
+
+The generated real `Disasm.cpp` translation unit linked and executed against the repository's shipped x86 `dis.dll`.
 
 Verified path:
 
 `image bytes -> ImageContext -> address translation -> MDisasm -> dis.dll -> DISINFO -> instruction navigation`
 
-This established that the legacy decoder backend can be used from the MSVC x86 portable core without VCL.
+### #24: segment-aware image mapping
 
-### Segment-aware image mapping
+`IdrImageContext` gained segment-aware mapping matching legacy `SegmentList` / `Adr2Pos` / `Pos2Adr` behavior, including unbacked segments using the legacy `0x80000` flag.
 
-Run #24 established a neutral segment-aware image model matching the original `SegmentList` / `Adr2Pos` / `Pos2Adr` behavior, including unbacked segments using the legacy `0x80000` flag.
+### #25-26: neutral decompiler model
 
-Flat-image mode remains available as a compatibility/test special case.
+Neutral decompiler structures and the first runtime primitives were established. The legacy behavior that `AssignItem` does not copy `Offset` remains intentionally preserved.
 
-### Neutral decompiler model and primitives
+### #31: whole real Decompiler TU compile
 
-Runs #25-#26 established neutral decompiler data structures plus runtime-tested equivalents of the first legacy primitives (`InitItem`, `AssignItem`, direct/invert conditions). Legacy behavior that `AssignItem` does not copy `Offset` is intentionally preserved and tested.
-
-## Current milestone: full legacy `Decompiler.cpp` compiles as one MSVC x86 TU
-
-Run **#31** is green at commit:
-
-`7addf0cd6116de1b21cc7e224792992428f62106` — `Handle final numeric String construction`
-
-This is the first integration milestone where the generated portable build compiles **the whole legacy `Decompiler.cpp` as one translation unit**, rather than method slices.
-
-The workflow now generates:
-
-- `tests/generated/Decompiler.portable.h`
-- `tests/generated/Misc.portable.h`
-- `tests/generated/Decompiler.portable.cpp`
-
-and produces:
-
-- `Decompiler.portable.obj`
-
-The object is compile-green but is **not yet linked into the integration probe**. That is the next phase.
-
-## What was required to make the full TU compile
-
-The full-TU generator intentionally transforms only the integration copy; original legacy source remains unchanged.
-
-Current compatibility seams include:
-
-- `String = std::string` as a transitional representation
-- explicit numeric `String(...) -> std::to_string(...)` mapping for known numeric expressions
-- `.Length()` -> `.size()`
-- 1-based `Pos()` and `SubString()` helpers
-- `SetLength()` / `IsEmpty()` transformations where reached
-- `True` / `False` normalization
-- narrow `Currency` and enumeration/Variant seams
-- embedded-procedure confirmation callback seam
-- form-owned virtual-method lookup seam
-
-The presentation-owned definitions are intentionally excluded from the portable Decompiler TU:
+The generated portable build first compiled the complete real `Decompiler.cpp` translation unit, excluding only:
 
 - `TDecompileEnv::OutputSourceCodeLine()`
 - `TDecompileEnv::OutputSourceCode()`
 - `TDecompileEnv::DecompileProc()`
 
-Do not fake VCL to pull them into the core.
+These remain outside the core because they belong to presentation/orchestration, not analysis.
 
-## Known risks / warnings
+### #32-40: linker-driven dependency discovery and real Misc integration
 
-Compile-green does not mean semantic equivalence.
+Linking the real Decompiler object exposed 103 unresolved externals. Coherent compatibility/session bridges reduced that set while the complete real `Misc.cpp` translation unit was integrated.
 
-Important remaining risks:
+By #40 both full `Misc.cpp` and full `Decompiler.cpp` compiled together and the linker frontier had fallen to 46 unresolved externals plus two duplicate generated helpers.
 
-- direct Borland 1-based `String[index]` usage can still differ from `std::string` 0-based indexing
-- `WideString`, `Variant`, `Currency`, `Comp`, container shims and formatting behavior remain transitional
-- legacy compiler warnings (including old `sprintf` / `sscanf` usage) are currently non-blocking
-- several legacy shift expressions trigger MSVC warnings and need intentional semantic review later
-- `TDecompiler::DecompileTry()` historically has a non-returning control path warning; do not silently modernize behavior
-- `ManualInput(...)` still needs an explicit deterministic headless service/policy
+### #42-44: real KnowledgeBase integration
 
-## Immediate next phase: linker-driven Decompiler integration
+The complete real `KnowledgeBase.cpp` translation unit was added. Its compile frontier narrowed to two missing analysis declarations and one dead legacy UID stub before becoming compile-clean.
 
-Do not return to method-slice expansion.
+With real KnowledgeBase linked, the unresolved set fell further.
+
+### #46-47: real Infos integration
+
+The complete real `Infos.cpp` translation unit was added. After one compatibility pass, all four major real legacy units compiled together:
+
+`KnowledgeBase + Infos + Misc + Decompiler`
+
+The remaining linker set fell to 29 and was dominated by legacy session/global state.
+
+### #48: portable session/state bridge
+
+The portable bridge took ownership of the analysis state actually needed from legacy `Main.cpp`, including:
+
+- `KnowledgeBase`, `Infos`, `Flags`
+- image/code sizes
+- segment/type/VMT lists
+- VMT offsets
+- string buffer state
+- register-name tables
+- class-address cache
+- working-directory seam
+
+This reduced the linker frontier from 29 unresolved externals to only four explicit headless analysis seams.
+
+### #49-50: headless service seams and zero unresolved externals
+
+The remaining seams were connected rather than stubbed away:
+
+- `ManualInput` -> portable service callback
+- method lookup -> portable service callback
+- enumeration formatting -> real `Misc.cpp::GetEnumerationString`
+- procedure-size estimation -> portable image/session/flag state
+- embedded-procedure confirmation -> portable service callback
+
+#49 exposed a local bridge compile bug in procedure-size offset handling. #50 corrected the `AddressToOffset()` contract and the entire integrated probe compiled, linked and executed successfully.
+
+## Current architecture boundary
+
+The portable target now has a real linked legacy analysis engine behind a headless policy/state boundary. It does **not** yet have a real executable-file ingestion path or useful CLI orchestration.
+
+The next architectural boundary is therefore file loading, not more linker chasing.
+
+## Known semantic risks
+
+Link/runtime success of the probe does not mean full behavioral equivalence.
+
+Important open risks:
+
+- direct Borland 1-based `String[index]` usage can differ from `std::string` 0-based indexing
+- `WideString`, `Variant`, `Currency`, `Comp`, formatting and container behavior remain transitional
+- `AnalysisState::SetFlags` / `ClearFlags` exact-end behavior still differs from the asymmetric legacy implementation and needs intentional resolution
+- legacy warnings such as signedness, old CRT functions and suspicious shift counts remain non-blocking until their runtime paths are exercised
+- `TDecompiler::DecompileTry()` and `GetStringArgument()` retain legacy not-all-paths-return warnings
+- headless defaults for interactive services are intentionally conservative; a CLI host must supply policy where meaningful
+
+## Immediate next phase: PE ingestion and a useful host boundary
+
+Do not return to method-slice work or linker-stub chasing.
 
 Next steps:
 
-1. add `Decompiler.portable.obj` to the integration link target;
-2. capture the unresolved external set from the linker;
-3. classify each unresolved symbol as neutral core state, legacy subsystem dependency, or UI/policy seam;
-4. implement/bridge those dependencies in coherent groups rather than adding arbitrary stubs;
-5. keep real `dis.dll` runtime coverage green while resolving the linker frontier;
-6. once the full Decompiler object links, begin runtime construction/execution of a minimal `TDecompileEnv` / `TDecompiler` path;
-7. then expose PE loading and a minimal `idr-cli.exe <target.exe>` entry point.
+1. isolate the real executable-loading semantics needed by analysis from the VCL `Main.cpp` path;
+2. add a neutral PE32 loader that owns file bytes and populates `ImageView` / `ImageSegments` correctly;
+3. bridge legacy image/session globals from that neutral loaded-image state instead of ad-hoc probe setup;
+4. add runtime tests for PE address/offset/segment mapping using a controlled Win32 PE sample;
+5. introduce a minimal headless host/CLI entry point capable of opening a target and reporting deterministic metadata before attempting full decompilation;
+6. then execute progressively deeper real analysis/decompiler paths and compare with original IDR on known Delphi Win32 binaries.
 
 ## Working rules
 
@@ -150,6 +181,7 @@ Next steps:
 - Stay x86 first.
 - Avoid broad Borland emulation when a narrow neutral API is possible.
 - Keep the smoke branch frozen.
+- Do not push over an active integration run because concurrency cancels it.
 - Do not merge to `main` or open an upstream PR yet.
 - Keep docs updated at meaningful milestones.
 

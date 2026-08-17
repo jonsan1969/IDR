@@ -20,8 +20,7 @@ Workflow: `.github/workflows/portable-core-smoke.yml`
 
 - `windows-latest` (currently Windows Server 2025 / VS2026 image)
 - MSVC x86 via `vswhere.exe` + `vcvars32.bat`
-- `actions/checkout@v6` (Node 24 generation)
-- no Node 20 helper actions
+- `actions/checkout@v6`
 - `concurrency.cancel-in-progress: true`
 - `docs/**` ignored for push-triggered CI
 
@@ -29,80 +28,81 @@ x86 is intentional because legacy `Disasm.cpp` contains inline x86 assembly that
 
 ## Proven portable so far
 
-Successfully compiled on GitHub-hosted MSVC x86:
+Successfully object-compiled on GitHub-hosted MSVC x86:
 
 - `Disasm.h`
 - `KnowledgeBase.h`
 - `Infos.h`
 - generated portable `Decompiler.h`
-- real `Disasm.cpp` after a small generated syntax/compatibility transform
+- real `Disasm.cpp` after generated syntax/compatibility transforms
 - primary real `Decompiler.cpp` slice from `GetString()` through complete `TDecompiler::Init()`
-- complete independent BJL/branch-analysis slice from `GetBJLRange()` through `PrintBJL()`
-- complete independent main-engine slice containing all of `TDecompiler::Decompile()`
-- complete `TDecompiler::DecompileCaseEnum()` slice
-- complete syscall slice containing `GetSysCallAlias()` and `SimulateSysCall()`
+- complete BJL/branch-analysis slice from `GetBJLRange()` through `PrintBJL()`
+- complete main-engine slice containing all of `TDecompiler::Decompile()`
+- complete `TDecompiler::DecompileCaseEnum()`
+- complete syscall slice: `GetSysCallAlias()` + `SimulateSysCall()`
+- complete call-simulation slice: `SimulateInherited()` + `SimulateCall()`
+- complete comparison reconstruction: `GetCmpInfo()`
+- complete one-operand simulator: `SimulateInstr1()`
+- complete two-operand simulator family: `SimulateInstr2RegImm()`, `SimulateInstr2RegReg()`, `SimulateInstr2RegMem()`, `SimulateInstr2MemImm()`, `SimulateInstr2MemReg()` and dispatcher `SimulateInstr2()`
+- complete three-operand simulator: `SimulateInstr3()`
 
-### Primary decompiler milestone
+Original source remains unchanged; portability adaptations are generated under `tests/generated` or expressed as smoke-only compatibility declarations.
 
-Run #27: complete `TDecompiler::Init()` compiles with MSVC x86 without importing VCL.
+## Milestone history
 
-### Branch-analysis milestones
+### Primary / branch analysis
 
-- #30 red: missing declaration of `BranchGetPrevInstructionType()` from mixed VCL/core `Misc.h`.
-- #31 green: complete `GetBJLRange()`.
-- #33 red: first Embarcadero `String` mismatch at numeric `String(int)` construction.
-- #34 green: complete `CreateBJLSequence()` after narrow `std::to_string(...)` transformation in generated smoke copy.
-- #35 green: complete `UpdateBJLList()` and `BJLAnalyze()` with no new shim.
-- #36 red: second verified String mismatch at `.Length()`.
-- #37 green: all non-printing BJL helpers through `ExprMerge()` after `.Length()` -> `.size()` transformation.
-- #38 green: complete `PrintBJL()` compiles after mapping `String(k)` to `std::to_string(k)` and exposing only the compile-time String signature of `AnsiReplaceText()`.
+- #27 green: complete `TDecompiler::Init()`.
+- #38 green: complete BJL slice through `PrintBJL()`.
 
-The complete BJL slice is now a stable green block. Original source remains unchanged; all portability transforms are generated under `tests/generated`.
+### Main engine
 
-## Main Decompiler engine milestone
+- #40/#42/#44/#46/#48 progressively exposed hidden core declarations, RTL/String semantics and small GUI/policy seams.
+- #49 green: **complete `TDecompiler::Decompile()`**.
 
-The third independent implementation slice covers complete `TDecompiler::Decompile()` and stops immediately before `TDecompiler::DecompileCaseEnum()`.
+The main engine is compiler-portable at object-compilation level once hidden core dependencies, limited UI-policy seams and observed Embarcadero RTL semantics are made explicit. This is not yet runtime semantic equivalence and not yet a linked CLI.
 
-- #40: first full engine compile hit MSVC's 100-error cap, overwhelmingly on hidden core declarations/constants from `Main.h`/`Misc.h`.
-- #42: progressed much deeper and exposed additional RTL/String semantics plus the first direct GUI/policy coupling inside `Decompile()`.
-- #44: progressed beyond that UI boundary. It exposed another form-owned analysis call (`FMain_11011981->GetMethodInfo`) and also caught an over-broad smoke transformation that accidentally produced `GetImmstd::to_string`; the generator was corrected instead of changing original source.
-- #46: major convergence milestone. The engine no longer hit the 100-error cap. The remaining errors were a bounded set dominated by numeric `String(...)` conversions, `TStringList::Objects` / `IndexOfName`, `Variant`, record/name/try helpers, and a handful of missing flags/kinds.
-- #48: dependency mapping had converged completely. Only nine concrete String/numeric compatibility errors remained: four numeric-zero assignments to `String`, one direct integer concatenation, and four `String(_imm)` constructions in IMUL simulation. No new core or GUI dependencies appeared.
-- #49: **complete `TDecompiler::Decompile()` compiles successfully with MSVC x86**. All workflow steps were green, including the already-stable header, primary, BJL and `Disasm.cpp` smoke tests.
+### Case enum / syscall
 
-This is the strongest portability result so far: the main decompiler engine is compiler-portable at object-compilation level once its hidden core dependencies, limited UI-policy seams and observed Embarcadero RTL semantics are made explicit. This is not yet runtime semantic equivalence and not yet a linked CLI.
+- #51 green: **complete `TDecompiler::DecompileCaseEnum()`**.
+- #53-#56: harness-only syscall slicing failures; no portability finding.
+- #57: first real syscall compile exposed only `GetTypeName`, `FT_EXTENDED` and known `String::Pos()` semantics.
+- #58 green: **complete `GetSysCallAlias()` + `SimulateSysCall()`**.
 
-## Case-enum milestone
+### Call simulation
 
-A fourth independent implementation slice isolates complete `TDecompiler::DecompileCaseEnum()` between `Decompile()` and `GetSysCallAlias()`.
+- #60: first real `SimulateInherited()` + `SimulateCall()` compile exposed direct VCL/form seams (`FMain_11011981`, `Application`) plus one numeric `String(DWord)` case.
+- #61: converged to one remaining `String(DisInfo.Offset)` conversion.
+- #62 green: **complete `SimulateInherited()` + `SimulateCall()`**.
 
-Known numeric case-label construction (`String(n + N)` / `String(m + N)`) is translated narrowly to `std::to_string(...)` in the generated smoke copy. The original source remains unchanged.
+The generated smoke copy maps embedded-procedure confirmation to `PortableConfirmEmbeddedProcedure(...)` and form-owned method lookup to `PortableGetMethodInfo(...)` instead of inventing VCL stubs.
 
-- #51: **complete `TDecompiler::DecompileCaseEnum()` compiles successfully with MSVC x86**. Job metadata confirmed all workflow steps green.
+### Comparison reconstruction
 
-## Syscall simulation milestone
+- #64 green: **complete `TDecompiler::GetCmpInfo()`**.
 
-A fifth independent slice covers `TDecompiler::GetSysCallAlias()` and complete `TDecompiler::SimulateSysCall()`.
+### Instruction simulation
 
-The syscall generator reuses the already-proven prefix from the main engine generator rather than duplicating its large declaration surface.
+- #66 green: **complete `TDecompiler::SimulateInstr1()`**.
+- #68 red: first `SimulateInstr2RegImm()` compile exposed only two `CmpInfo.R = 0` String assignments.
+- #69 green: **complete `SimulateInstr2RegImm()`**.
+- #71 green: **complete `SimulateInstr2RegReg()`**.
+- #73 red: `SimulateInstr2RegMem()` exposed one direct integer/String concatenation.
+- #74 green: **complete `SimulateInstr2RegMem()`**.
+- #76 green: **complete `SimulateInstr2MemImm()`**.
+- #78 green: **complete `SimulateInstr2MemReg()`**.
+- #79 was a generator-only green run and did not yet contain the dispatcher compile.
+- #80 green: **complete `TDecompiler::SimulateInstr2()` dispatcher**, proving the full two-operand family compile-green.
+- #82 red: first `SimulateInstr3()` compile exposed four instances of the already-known `String(_imm)` numeric construction and no new dependency class.
+- #83 green: **complete `TDecompiler::SimulateInstr3()`**.
 
-- #53-#56: harness-only boundary/marker failures while making the source slicing robust; no syscall compiler result yet.
-- #57: first real syscall compile. Missing surface was small: `GetTypeName(DWord)`, `FT_EXTENDED`, plus three already-known `String::Pos()` cases.
-- #58: **complete `GetSysCallAlias()` + `SimulateSysCall()` compile successfully with hosted MSVC x86**. Every workflow step was green, including the complete main engine, case-enum, syscall and `Disasm.cpp` slices.
+At #83 the major instruction-simulation family `SimulateInstr1` / full `SimulateInstr2` / `SimulateInstr3` is compile-green under hosted MSVC x86.
 
-This is significant because syscall/runtime helper reconstruction is now compiler-portable using the same neutral dependency surface as the main engine rather than a VCL/Embarcadero environment.
+## Engine GUI/interactivity boundary
 
-## Current active test: call simulation slice
+Embedded-procedure handling directly reads/writes `FMain_11011981->lbCode->ItemIndex` and calls `Application->MessageBox()`. Generated smoke code replaces that plumbing with `PortableConfirmEmbeddedProcedure(...)`.
 
-A sixth independent slice now covers `TDecompiler::SimulateInherited()` plus complete `TDecompiler::SimulateCall()`.
-
-It reuses the proven engine prefix and applies only already-observed String compatibility transforms in the generated smoke copy. Keeping this separate preserves #58 as a stable syscall milestone while mapping call-resolution and argument/return reconstruction independently.
-
-### Engine GUI/interactivity boundary
-
-Embedded-procedure handling directly reads/writes `FMain_11011981->lbCode->ItemIndex` and calls `Application->MessageBox()`. The generated smoke copy replaces that plumbing with `PortableConfirmEmbeddedProcedure(...)` rather than fake VCL classes.
-
-Virtual-method lookup is analysis logic but is currently owned by the form through `FMain_11011981->GetMethodInfo`; the smoke copy exposes it as `PortableGetMethodInfo(...)`.
+Virtual-method lookup is analysis logic but is currently owned by the form through `FMain_11011981->GetMethodInfo`; smoke code exposes it as `PortableGetMethodInfo(...)`.
 
 `ManualInput(...)` remains an explicit dependency for unresolved return-byte/type cases and should eventually become a resolver callback or deterministic CLI policy.
 
@@ -112,8 +112,9 @@ Virtual-method lookup is analysis logic but is currently owned by the form throu
 
 Compiler-verified String/RTL differences currently mapped or exposed in generated smoke code:
 
-- numeric `String(int)` -> controlled `std::to_string(...)` transforms
-- numeric values assigned/concatenated directly to Embarcadero `String` -> explicit decimal conversion in generated smoke code where observed
+- numeric `String(int)` -> controlled `std::to_string(...)`
+- numeric zero assigned to `String` -> explicit textual `"0"` where observed
+- direct integer/String concatenation -> explicit decimal conversion where observed
 - `.Length()` -> `.size()`
 - `String::Pos()` -> helper preserving 1-based/zero-not-found semantics
 - `SubString()` -> helper preserving 1-based start semantics
@@ -123,9 +124,9 @@ Compiler-verified String/RTL differences currently mapped or exposed in generate
 - `WideString` has a minimal smoke wrapper
 - `Variant` has a temporary integer-compatible smoke alias
 
-`String = std::string` is increasingly strained. Do not treat compile success as runtime semantic equivalence, especially for direct 1-based indexing. A thin compatibility type may become justified after the remaining indexing behavior is mapped.
+`String = std::string` remains a compile-smoke approximation, not runtime equivalence. Direct 1-based `String[index]` remains a known semantic hazard and must be addressed before calling the engine runtime-ready.
 
-`TStringList` now includes `Strings`, aligned `Objects`, sorted insertion, `IndexOf`, and `IndexOfName`. This is still a targeted compatibility shim, not a full VCL implementation.
+`TStringList` includes `Strings`, aligned `Objects`, sorted insertion, `IndexOf`, and `IndexOfName`. It is still a targeted compatibility shim, not full VCL semantics.
 
 ## Architectural boundaries found
 
@@ -135,19 +136,32 @@ Mixes core records/constants with VCL GUI state. Current runs strongly support e
 
 ### `Misc.h`
 
-Mixes pure analysis helpers with forms/canvas/dialog helpers. The main engine and syscall simulator use many pure helpers without needing the UI half, strengthening the case for a separate core-analysis API header.
+Mixes pure analysis helpers with forms/canvas/dialog helpers. Tested engine code repeatedly uses the pure half without needing the UI half, supporting a separate neutral core-analysis API header.
 
 ### GUI boundary after `TDecompiler::Init()`
 
-`OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()` directly couple to form/presentation behavior and remain intentionally skipped by the headless core mapping.
+`OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()` directly couple to form/presentation behavior and remain intentionally skipped by headless core mapping.
 
-### GUI/interactivity inside `TDecompiler::Decompile()`
+### GUI/interactivity inside `TDecompiler::Decompile()` / call simulation
 
 The engine is overwhelmingly analysis code but contains small policy/UI decisions around embedded procedures, virtual-method lookup ownership, and unresolved-call input. These need injected interfaces/policies in a real headless core.
 
+## Current direction after #83
+
+The large decompiler execution/simulation blocks are now compile-mapped. Next work should identify any remaining independent `Decompiler.cpp` core helpers not yet covered, then transition from isolated object-compile slices toward:
+
+1. neutral core headers/API extraction,
+2. linkable core translation units,
+3. Delphi/Embarcadero String semantic cleanup (especially direct 1-based indexing),
+4. headless binary loading / analysis entry path,
+5. first linked `idr-cli.exe`,
+6. runtime tests against known Delphi Win32 binaries.
+
+Do not interpret the current green matrix as proof of runtime semantic equivalence.
+
 ## Working rules
 
-- Preserve original source; generated transformed copies/harnesses only during mapping.
+- Preserve original source during dependency mapping.
 - Add compatibility semantics only when actual code requires them.
 - Keep functional portability separate from cleanup/security modernization.
 - Stay x86 first.

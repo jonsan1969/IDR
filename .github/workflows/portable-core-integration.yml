@@ -42,6 +42,7 @@ jobs:
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrLegacyBridge.cpp /Fo:IdrLegacyBridge.obj || exit /b 1
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_core_link_probe.cpp /Fo:idr_core_link_probe.obj || exit /b 1
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_pe_loader_probe.cpp /Fo:idr_pe_loader_probe.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_control_flow_probe.cpp /Fo:idr_control_flow_probe.obj || exit /b 1
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_cli.cpp /Fo:idr_cli.obj || exit /b 1
           cl /nologo /std:c++17 /W4 /EHsc /c tests\idr_cli_fixture.cpp /Fo:idr_cli_fixture.obj || exit /b 1
           cl /nologo /std:c++17 /W3 /EHsc /I. /c tests\generated\Disasm.portable.cpp /Fo:Disasm.portable.obj || exit /b 1
@@ -90,6 +91,17 @@ jobs:
       - name: Run linked probe
         shell: cmd
         run: .\idr-core-link-probe.exe
+
+      - name: Link neutral control-flow probe
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
+          link /nologo /subsystem:console /out:idr-control-flow-probe.exe IdrImageContext.obj IdrAnalysisState.obj idr_control_flow_probe.obj || exit /b 1
+
+      - name: Run neutral control-flow probe
+        shell: cmd
+        run: .\idr-control-flow-probe.exe
 
       - name: Link PE32 session probe
         shell: cmd

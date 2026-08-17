@@ -23,6 +23,7 @@ jobs:
         run: |
           .\tests\prepare_portable_disasm.ps1
           .\tests\prepare_portable_decompiler_full.ps1
+          .\tests\prepare_portable_misc_full.ps1
 
       - name: Compile integrated core objects
         shell: cmd
@@ -39,6 +40,13 @@ jobs:
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_core_link_probe.cpp /Fo:idr_core_link_probe.obj
           cl /nologo /std:c++17 /W3 /EHsc /I. /c tests\generated\Disasm.portable.cpp /Fo:Disasm.portable.obj
 
+      - name: Compile full legacy Misc translation unit
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
+          cl /nologo /std:c++17 /W3 /EHsc /I. /Iportable\core /Itests\generated /c tests\generated\Misc.portable.cpp /Fo:Misc.portable.obj
+
       - name: Compile full legacy Decompiler translation unit
         shell: cmd
         run: |
@@ -51,7 +59,7 @@ jobs:
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          link /nologo /subsystem:console /out:idr-core-link-probe.exe IdrCoreServices.obj IdrImageContext.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj IdrDecompilerModel.obj IdrLegacyBridge.obj idr_core_link_probe.obj Disasm.portable.obj Decompiler.portable.obj > link-output.txt 2>&1
+          link /nologo /subsystem:console /out:idr-core-link-probe.exe IdrCoreServices.obj IdrImageContext.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj IdrDecompilerModel.obj IdrLegacyBridge.obj idr_core_link_probe.obj Disasm.portable.obj Misc.portable.obj Decompiler.portable.obj > link-output.txt 2>&1
           if errorlevel 1 (
             for /f "usebackq delims=" %%L in ("link-output.txt") do echo ::error title=MSVC linker::%%L
             type link-output.txt

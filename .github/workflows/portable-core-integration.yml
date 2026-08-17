@@ -50,7 +50,7 @@ jobs:
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          link /nologo /subsystem:console /out:idr-core-link-probe.exe IdrCoreServices.obj IdrImageContext.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj IdrDecompilerModel.obj idr_core_link_probe.obj Disasm.portable.obj > link-output.txt 2>&1
+          link /nologo /subsystem:console /out:idr-core-link-probe.exe IdrCoreServices.obj IdrImageContext.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj IdrDecompilerModel.obj idr_core_link_probe.obj Disasm.portable.obj Decompiler.portable.obj > link-output.txt 2>&1
           if errorlevel 1 (
             for /f "usebackq delims=" %%L in ("link-output.txt") do echo ::error title=MSVC linker::%%L
             type link-output.txt

@@ -17,7 +17,7 @@ using String = std::string;
 #define __fastcall
 #endif
 
-// Core analysis flags normally declared in Main.h. Keep only the
+// Core analysis flags and kinds normally declared in Main.h. Keep only the
 // definitions needed by the portable Decompiler slice here so the test
 // harness does not have to pull in the VCL-heavy Main.h.
 #ifndef cfPass
@@ -25,6 +25,9 @@ using String = std::string;
 #endif
 #ifndef cfLoc
 #define cfLoc 0x00800000
+#endif
+#ifndef ikFunc
+#define ikFunc 0x29
 #endif
 
 class Exception : public std::runtime_error {

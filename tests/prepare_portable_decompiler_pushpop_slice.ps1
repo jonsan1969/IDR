@@ -27,7 +27,7 @@ $prefix = $engine.Substring(0, $prefixEnd)
 $prefix += "`nString __fastcall GetGvarName(DWord adr);`n"
 
 $numericStringArgs = @(
-    '_offset', '_foffset', '_pow2', '_mod', '_size', '_sz', '_ofs', '_idx', '_idx1', '_classSize', '_ap', '_adr', '_ea', '_cmpRes', '_len',
+    '_offset', '_foffset', '_pow2', '_mod', '_size', '_sz', '_ofs', '_idx', '_idx1', '_classSize', '_ap', '_adr', '_ea', '_cmpRes', '_len', '_N', '_N1',
     '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_itemBase.IntValue', '_itemSrc.IntValue', '_itemDst.IntValue',
     'DisInfo.Immediate', 'DisInfo.Offset', 'DisInfo.Scale'
 )
@@ -35,6 +35,8 @@ foreach ($arg in $numericStringArgs) {
     $escaped = [regex]::Escape($arg)
     $body = $body -replace "(?<![A-Za-z0-9_])String\($escaped\)", "std::to_string($arg)"
 }
+$body = $body -replace 'String\(_N1\s*-\s*_N2\)', 'std::to_string(_N1 - _N2)'
+$body = $body -replace 'String\(_N1\s*-\s*1\)', 'std::to_string(_N1 - 1)'
 $body = $body -replace '(?<![A-Za-z0-9_])True(?![A-Za-z0-9_])', 'true'
 $body = $body -replace '(?<![A-Za-z0-9_])False(?![A-Za-z0-9_])', 'false'
 $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Pos\(([^\r\n\)]+)\)', 'PortableStringPos($1, $2)'

@@ -1,6 +1,6 @@
 $src = Get-Content -Raw -LiteralPath "$PSScriptRoot\..\Decompiler.cpp"
 $start = $src.IndexOf('String __fastcall GetString(PITEM item, Byte precedence)')
-$end = $src.IndexOf('PITEM __fastcall TDecompiler::FGet(int idx)', $start)
+$end = $src.IndexOf('bool __fastcall TDecompiler::Init(DWord fromAdr)', $start)
 if ($start -lt 0 -or $end -lt 0) { throw 'Decompiler slice markers not found' }
 $body = $src.Substring($start, $end - $start)
 $prefix = @'

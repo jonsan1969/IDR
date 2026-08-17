@@ -21,7 +21,7 @@ $prefix = $engine.Substring(0, $prefixEnd)
 $numericStringArgs = @(
     '_argsNum', '_retBytes', '_retBytesCalc', '_len', '_val', '_esp', '_idx', '_rn', '_ndx', '_size', '_recsize',
     '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_item4.IntValue',
-    '_classAdr', '_adr', '_dynAdr', 'callAdr', 'curAdr'
+    '_classAdr', '_adr', '_dynAdr', 'callAdr', 'curAdr', 'DisInfo.Offset'
 )
 foreach ($arg in $numericStringArgs) {
     $escaped = [regex]::Escape($arg)

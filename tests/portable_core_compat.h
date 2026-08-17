@@ -61,6 +61,16 @@ public:
         Count = static_cast<int>(Items.size());
         return Count - 1;
     }
+
+    void Clear() {
+        Items.clear();
+        Count = 0;
+    }
+
+    void Delete(int index) {
+        Items.erase(Items.begin() + index);
+        Count = static_cast<int>(Items.size());
+    }
 };
 
 class TStringList {

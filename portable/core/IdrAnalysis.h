@@ -14,4 +14,10 @@ std::string DefaultProcName(DWord address);
 std::string GlobalVarName(DWord address);
 bool CanReplaceTypeName(const std::string &fromName, const std::string &toName);
 
+std::string ExtractClassName(const std::string &name);
+std::string ExtractProcName(const std::string &name);
+std::string ExtractName(const std::string &name);
+std::string ExtractType(const std::string &name);
+std::string TrimTypeName(const std::string &typeName);
+
 } // namespace idr::core

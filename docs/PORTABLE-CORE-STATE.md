@@ -37,7 +37,7 @@ Successfully compiled on GitHub-hosted MSVC x86:
 - generated portable `Decompiler.h`
 - real `Disasm.cpp` after a small generated syntax/compatibility transform
 - primary real `Decompiler.cpp` slice from `GetString()` through the complete `TDecompiler::Init()`
-- independent branch-analysis slice through `GetBJLRange()`, `CreateBJLSequence()`, `UpdateBJLList()` and complete `BJLAnalyze()`
+- independent branch-analysis slice through all non-printing BJL helpers up to `ExprMerge()`
 
 ### Primary decompiler milestone
 
@@ -52,30 +52,23 @@ Coverage includes naming helpers, ITEM manipulation, loop/environment objects, s
 - #33 red: first real Embarcadero `String` semantic mismatch at `String(m)` / `String(m + 1)`.
 - #34 green: complete `CreateBJLSequence()` compiles after the generated smoke copy maps those numeric conversions to `std::to_string(...)`.
 - #35 green: complete `UpdateBJLList()` and complete `BJLAnalyze()` compile with no additional portability shim.
-- #36 red: the expanded non-printing BJL helper block reached `String::Length()`; this is the second compiler-verified Embarcadero String semantic mismatch. No new list, BJL, VCL or compiler blocker was exposed before that point.
+- #36 red: expanded BJL helpers reached `String::Length()`, the second compiler-verified String semantic mismatch.
+- #37 green: the complete non-printing BJL helper span through `ExprMerge()` compiles after the generated smoke copy maps `.Length()` to `.size()`.
 
-Run #34/#35 also confirm the current STL-backed `TList` operations used by the BJL code compile cleanly: `Count`, `Items[]`, `Add()`, `Clear()`, and `Delete(index)`.
+Run #34 onward also confirms the current STL-backed `TList` operations used by BJL code compile cleanly: `Count`, `Items[]`, `Add()`, `Clear()`, and `Delete(index)`.
 
 ## Current active test
 
-The branch-analysis slice remains extended through the remaining non-printing BJL helpers and stops immediately before `PrintBJL()`.
+The branch-analysis slice is now extended through complete `TDecompileEnv::PrintBJL()` and stops immediately before `TDecompiler::Decompile()`.
 
-The active span adds:
+`PrintBJL()` adds two observed Embarcadero dependencies:
 
-- `BJLGetIdx()`
-- `BJLCheckPattern1()`
-- `BJLCheckPattern2()`
-- `BJLFindLabel()`
-- `BJLSeqSetStateU()`
-- `BJLListSetUsed()`
-- `ExprGetOperation()`
-- `ExprMerge()`
+- numeric `String(k)`, mapped to `std::to_string(k)` in the generated smoke copy
+- `AnsiReplaceText(...)`; compile-only smoke exposes its pure String signature without importing `System.StrUtils.hpp` or implementing an RTL clone yet
 
-After #36, the generated smoke copy now maps observed Embarcadero `String::Length()` calls to `std::string::size()` in addition to the earlier numeric `String(int)` -> `std::to_string(...)` transformation.
+Triggering commit: `5170af65ceb3fdf2edf3e728b85ec007d903d1be`.
 
-Current triggering commit: `4df1fe7422cc22c39538c86806724ba1834aa5ef`.
-
-`PrintBJL()` remains the next separate boundary because it is likely to expose further String semantics.
+Original IDR source remains unchanged; transformations exist only in the generated portability smoke copy.
 
 If the active run fails, fetch that new failing run log once only, fix the complete batch of errors from that result, and never refetch the same failed log.
 
@@ -91,7 +84,7 @@ If the active run fails, fetch that new failing run log once only, fix the compl
 - standard-C++ `Exception` shim
 - selected core flags/kinds trapped in `Main.h`: `cfImport`, `cfPass`, `cfLoc`, `cfSkip`, `ikFloat`, `ikLString`, `ikRecord`, `ikFunc`
 
-Important: `String = std::string` is only a compile shim, not a semantic replacement. Compiler-verified differences now include numeric `String(int)` construction (#33) and `.Length()` (#36). Other Embarcadero semantics still to map include 1-based indexing, `Pos()`, `SubString()`, case-insensitive helpers and Unicode behavior.
+Important: `String = std::string` is only a compile shim, not a semantic replacement. Compiler-verified differences now include numeric `String(int)` construction (#33) and `.Length()` (#36). Other Embarcadero semantics still to map include 1-based indexing, `Pos()`, `SubString()`, case-insensitive replacement/search and Unicode behavior.
 
 ## Architectural boundaries found
 

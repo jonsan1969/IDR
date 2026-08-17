@@ -36,41 +36,43 @@ Successfully compiled on GitHub-hosted MSVC x86:
 - `Infos.h`
 - generated portable `Decompiler.h`
 - real `Disasm.cpp` after a small generated syntax/compatibility transform
-- primary real `Decompiler.cpp` slice from `GetString()` through the complete `TDecompiler::Init()`
-- independent branch-analysis slice through all non-printing BJL helpers up to `ExprMerge()`
+- primary real `Decompiler.cpp` slice from `GetString()` through complete `TDecompiler::Init()`
+- complete independent BJL/branch-analysis slice from `GetBJLRange()` through `PrintBJL()`
 
 ### Primary decompiler milestone
 
 Run #27: complete `TDecompiler::Init()` compiles with MSVC x86 without importing VCL.
 
-Coverage includes naming helpers, ITEM manipulation, loop/environment objects, saved context, register state, normal/FPU stacks, prototype checking, decompiler flags and calling-convention/return-value setup.
-
 ### Branch-analysis milestones
 
-- #30 red: missing declaration of core helper `BranchGetPrevInstructionType()` from mixed VCL/core `Misc.h`.
-- #31 green: complete `GetBJLRange()` compiles after exposing only that helper declaration.
-- #33 red: first real Embarcadero `String` semantic mismatch at `String(m)` / `String(m + 1)`.
-- #34 green: complete `CreateBJLSequence()` compiles after the generated smoke copy maps those numeric conversions to `std::to_string(...)`.
-- #35 green: complete `UpdateBJLList()` and complete `BJLAnalyze()` compile with no additional portability shim.
-- #36 red: expanded BJL helpers reached `String::Length()`, the second compiler-verified String semantic mismatch.
-- #37 green: the complete non-printing BJL helper span through `ExprMerge()` compiles after the generated smoke copy maps `.Length()` to `.size()`.
+- #30 red: missing declaration of `BranchGetPrevInstructionType()` from mixed VCL/core `Misc.h`.
+- #31 green: complete `GetBJLRange()`.
+- #33 red: first Embarcadero `String` mismatch at numeric `String(int)` construction.
+- #34 green: complete `CreateBJLSequence()` after narrow `std::to_string(...)` transformation in generated smoke copy.
+- #35 green: complete `UpdateBJLList()` and `BJLAnalyze()` with no new shim.
+- #36 red: second verified String mismatch at `.Length()`.
+- #37 green: all non-printing BJL helpers through `ExprMerge()` after `.Length()` -> `.size()` transformation.
+- #38 green: complete `PrintBJL()` compiles after mapping `String(k)` to `std::to_string(k)` and exposing only the compile-time String signature of `AnsiReplaceText()`.
 
-Run #34 onward also confirms the current STL-backed `TList` operations used by BJL code compile cleanly: `Count`, `Items[]`, `Add()`, `Clear()`, and `Delete(index)`.
+The complete BJL slice is therefore now a stable green block. Original source remains unchanged; all portability transforms are generated under `tests/generated`.
 
-## Current active test
+## Current active test: Decompiler engine slice
 
-The branch-analysis slice is now extended through complete `TDecompileEnv::PrintBJL()` and stops immediately before `TDecompiler::Decompile()`.
+A third independent implementation slice has been introduced for the main engine:
 
-`PrintBJL()` adds two observed Embarcadero dependencies:
+`TDecompiler::Decompile()`
 
-- numeric `String(k)`, mapped to `std::to_string(k)` in the generated smoke copy
-- `AnsiReplaceText(...)`; compile-only smoke exposes its pure String signature without importing `System.StrUtils.hpp` or implementing an RTL clone yet
+New generator:
 
-Triggering commit: `5170af65ceb3fdf2edf3e728b85ec007d903d1be`.
+- `tests/prepare_portable_decompiler_engine_slice.ps1`
 
-Original IDR source remains unchanged; transformations exist only in the generated portability smoke copy.
+The slice contains only the complete `TDecompiler::Decompile()` implementation and stops immediately before `TDecompiler::DecompileCaseEnum()`.
 
-If the active run fails, fetch that new failing run log once only, fix the complete batch of errors from that result, and never refetch the same failed log.
+The workflow now prepares and compiles this as a separate object after the already-green primary and BJL slices. This intentionally isolates main-engine dependency growth from the proven BJL block.
+
+Triggering workflow commit: `c79fc41c60f64ebfbbb143355641fafc854a3ff5`.
+
+If the engine slice fails, fetch that new failing run log once, analyze the complete error set from that result, batch related fixes, and do not fetch that run log again.
 
 ## Compatibility layer status
 
@@ -84,36 +86,42 @@ If the active run fails, fetch that new failing run log once only, fix the compl
 - standard-C++ `Exception` shim
 - selected core flags/kinds trapped in `Main.h`: `cfImport`, `cfPass`, `cfLoc`, `cfSkip`, `ikFloat`, `ikLString`, `ikRecord`, `ikFunc`
 
-Important: `String = std::string` is only a compile shim, not a semantic replacement. Compiler-verified differences now include numeric `String(int)` construction (#33) and `.Length()` (#36). Other Embarcadero semantics still to map include 1-based indexing, `Pos()`, `SubString()`, case-insensitive replacement/search and Unicode behavior.
+Compiler-verified String differences currently mapped in generated smoke code:
+
+- numeric `String(int)` -> `std::to_string(...)`
+- `.Length()` -> `.size()`
+- `AnsiReplaceText()` exposed by a narrow String-only declaration for compile smoke
+
+Still to map as encountered: 1-based indexing, `Pos()`, `SubString()`, case-insensitive behavior, Unicode/ANSI semantics and other RTL helpers.
 
 ## Architectural boundaries found
 
 ### `Main.h`
 
-Mixes core records/constants with VCL GUI state. Future clean port should move reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`) consumed by both core and VCL code.
+Mixes core records/constants with VCL GUI state. Future clean port should move reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
 
 ### `Misc.h`
 
-Also mixes responsibilities. Pure analysis APIs such as `BranchGetPrevInstructionType()` sit beside `TForm`, `TCanvas`, clipboard and dialog helpers. #30 -> #31 proved the analysis API can be separated from the UI half.
+Mixes pure analysis helpers with `TForm`, `TCanvas`, clipboard and dialog helpers. #30 -> #31 proved analysis APIs can be exposed independently.
 
 ### GUI boundary after `TDecompiler::Init()`
 
-Immediately afterward, `OutputSourceCodeLine()` writes directly to `FMain_11011981->lbSourceCode`; `OutputSourceCode()` also depends on Embarcadero string behavior. This block is intentionally skipped in the headless core experiment.
+`OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()` directly couple to form/presentation behavior and are intentionally skipped by the headless core mapping.
 
 ### Other UI-heavy areas
 
-- `InputDlg.*`: pure UI
-- `Resources.*`: VCL/DFM-heavy
-- `TypeInfo2.*`: useful RTTI logic mixed with a VCL form; later extract RTTI core helpers
+- `InputDlg.*`
+- `Resources.*`
+- `TypeInfo2.*` presentation side
 
 ## Working rules
 
 - Preserve original source; generated transformed copies/harnesses only during mapping.
 - Add compatibility semantics only when actual code requires them.
-- Do not mix CRT/security modernization with functional portability work.
-- Do not attempt x64 yet.
+- Keep functional portability separate from cleanup/security modernization.
+- Stay x86 first.
 - Do not pull GUI code into core just to keep source slices contiguous.
-- Fetch a failed Actions log once per run; successful runs need status/job verification only, not logs.
+- Fetch a failed Actions log once per run; successful runs need status/job verification only.
 - Keep these docs updated at meaningful milestones.
 
 ## Success criterion

@@ -21,7 +21,9 @@ $bodyTry = Get-MethodBody 'TDecompiler::DecompileTry(' 'DWord __fastcall '
 $bodyConditions = Get-MethodBody 'TDecompiler::AnalyzeConditions(' 'int __fastcall '
 
 # Coverage audit #97 identified these eight remaining TDecompiler helpers.
-$bodyArrayField = Get-MethodBody 'TDecompiler::GetArrayFieldOffset(' 'int __fastcall '
+# GetArrayFieldOffset has a source line break after __fastcall, so deliberately
+# omit the trailing space from its return-type marker.
+$bodyArrayField = Get-MethodBody 'TDecompiler::GetArrayFieldOffset(' 'int __fastcall'
 $bodyCycleFrom = Get-MethodBody 'TDecompiler::GetCycleFrom(' 'String __fastcall '
 $bodyCycleIdx = Get-MethodBody 'TDecompiler::GetCycleIdx(' 'void __fastcall '
 $bodyCycleTo = Get-MethodBody 'TDecompiler::GetCycleTo(' 'String __fastcall '
@@ -38,12 +40,25 @@ $engine = Get-Content -Raw -LiteralPath "$PSScriptRoot\generated\Decompiler.engi
 $prefixEnd = $engine.IndexOf('DWord __fastcall TDecompiler::Decompile(')
 if ($prefixEnd -lt 0) { throw 'Portable engine prefix marker not found' }
 $prefix = $engine.Substring(0, $prefixEnd)
-$prefix += "`nString __fastcall GetGvarName(DWord adr);`nString __fastcall GetInvertCondition(char c);`n"
+$prefix += @'
+
+String __fastcall GetGvarName(DWord adr);
+String __fastcall GetInvertCondition(char c);
+bool __fastcall GetArrayIndexes(String typeName, int dim, int *lowIdx, int *highIdx);
+String __fastcall FloatToStr(float value);
+String __fastcall FloatToStr(double value);
+String __fastcall FloatToStr(long double value);
+String __fastcall FloatToStr(Comp value);
+// C++Builder Variant accepted textual values implicitly. Keep that conversion
+// as an explicit smoke overload until the portable Variant boundary is real.
+String __fastcall GetEnumerationString(String typeName, String value);
+
+'@
 
 $numericStringArgs = @(
-    '_offset', '_foffset', '_pow2', '_mod', '_size', '_sz', '_ofs', '_idx', '_idx1', '_classSize', '_ap', '_adr', '_ea', '_cmpRes', '_len', '_N', '_N1',
+    '_offset', '_foffset', '_fofs', '_pow2', '_mod', '_size', '_sz', '_ofs', '_pos', '_idx', '_idx1', '_lIdx', '_hIdx', '_cnt', '_classSize', '_ap', '_adr', '_ea', '_cmpRes', '_len', '_N', '_N1',
     '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_itemBase.IntValue', '_itemSrc.IntValue', '_itemDst.IntValue',
-    'DisInfo.Immediate', 'DisInfo.Offset', 'DisInfo.Scale'
+    'DisInfo.Immediate', 'DisInfo.Offset', 'DisInfo.Scale', 'ADisInfo->Immediate', 'ADisInfo->Offset', 'ADisInfo->Scale'
 )
 foreach ($arg in $numericStringArgs) {
     $escaped = [regex]::Escape($arg)

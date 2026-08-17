@@ -1,0 +1,20 @@
+name: Portable core smoke
+
+on:
+  push:
+    branches:
+      - agent/portable-core-smoke
+  workflow_dispatch:
+
+jobs:
+  msvc-header-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Compile Disasm header smoke test
+        shell: cmd
+        run: cl /nologo /std:c++17 /W4 /EHsc /c tests\portable_disasm_header_smoke.cpp /Fo:portable_disasm_header_smoke.obj

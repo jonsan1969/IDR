@@ -39,4 +39,45 @@ bool CanReplaceTypeName(const std::string &fromName, const std::string &toName) 
     return lowered == "byte" || lowered == "word" || lowered == "dword";
 }
 
+std::string ExtractClassName(const std::string &name) {
+    if (name.empty()) return {};
+    const auto pos = name.find('.');
+    return pos == std::string::npos ? std::string{} : name.substr(0, pos);
+}
+
+std::string ExtractProcName(const std::string &name) {
+    if (name.empty()) return {};
+    const auto pos = name.find('.');
+    return pos == std::string::npos ? name : name.substr(pos + 1);
+}
+
+std::string ExtractName(const std::string &name) {
+    if (name.empty()) return {};
+    const auto pos = name.find(':');
+    return pos == std::string::npos ? name : name.substr(0, pos);
+}
+
+std::string ExtractType(const std::string &name) {
+    if (name.empty()) return {};
+    const auto pos = name.find(':');
+    return pos == std::string::npos ? std::string{} : name.substr(pos + 1);
+}
+
+std::string TrimTypeName(const std::string &typeName) {
+    if (typeName.empty()) return typeName;
+
+    const auto pos = typeName.find('.');
+    if (pos == std::string::npos || pos == 0) return typeName;
+    if (pos + 1 >= typeName.size() || typeName[pos + 1] == '.') return typeName;
+
+    for (std::size_t i = 0; i < pos; ++i) {
+        const unsigned char ch = static_cast<unsigned char>(typeName[i]);
+        if (ch < static_cast<unsigned char>('0') || ch == static_cast<unsigned char>('<')) {
+            return typeName;
+        }
+    }
+
+    return ExtractProcName(typeName);
+}
+
 } // namespace idr::core

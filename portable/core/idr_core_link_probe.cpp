@@ -1,6 +1,7 @@
 #include "IdrAnalysis.h"
 #include "IdrAnalysisState.h"
 #include "IdrCoreServices.h"
+#include "IdrInstructionNav.h"
 
 #include <Windows.h>
 #include <cstdint>
@@ -46,11 +47,25 @@ int main() {
     if (state.SetFlag(idr::core::CodeFlags::Code, 16)) return 24;
     if (state.SetFlags(idr::core::CodeFlags::Code, 15, 2)) return 25;
 
+    idr::core::AnalysisState nav(20);
+    nav.SetFlag(idr::core::CodeFlags::Instruction, 2);
+    nav.SetFlag(idr::core::CodeFlags::Instruction, 5);
+    nav.SetFlag(idr::core::CodeFlags::Instruction, 8);
+    nav.SetFlag(idr::core::CodeFlags::SetA, 5);
+    nav.SetFlag(idr::core::CodeFlags::ProcStart, 3);
+    if (idr::core::GetNearestUpInstruction(nav, 9) != 8) return 26;
+    if (idr::core::GetNthUpInstruction(nav, 9, 2) != 5) return 27;
+    if (idr::core::GetNearestUpInstruction(nav, 8, 4) != 5) return 28;
+    if (idr::core::GetNearestUpInstruction(nav, 9, 0, 3) != 2) return 29;
+    if (idr::core::GetNearestArgA(nav, 8) != 5) return 30;
+    if (idr::core::GetNearestUpInstruction(nav, 5) != -1) return 31;
+
     MDisasm disasm;
     const auto op = disasm.GetOp(const_cast<char *>("mov"));
     std::cout << "portable-core link probe: OP_MOV=" << static_cast<int>(op)
               << ", name=" << idr::core::DefaultProcName(0x401000)
               << ", type=" << idr::core::TrimTypeName("System.Integer")
-              << ", flags=" << state.Size() << '\n';
-    return op == OP_MOV ? 0 : 26;
+              << ", flags=" << state.Size()
+              << ", nearest=" << idr::core::GetNearestUpInstruction(nav, 9) << '\n';
+    return op == OP_MOV ? 0 : 32;
 }

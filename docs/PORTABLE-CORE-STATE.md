@@ -4,198 +4,121 @@ Last updated: 2026-08-17
 
 ## Goal
 
-Make it possible to build a useful headless IDR core/CLI on free GitHub-hosted Windows Actions runners, without requiring Embarcadero C++Builder, while keeping the original VCL GUI path intact.
+Build a useful headless IDR core/CLI on free GitHub-hosted Windows Actions runners with MSVC, without requiring Embarcadero C++Builder, while leaving the original VCL GUI path intact.
 
-This work started from the `sarog/IDR` fork, which modernized IDR for current Embarcadero C++Builder versions and added CMake/Ninja support. The current experimental work lives in `jonsan1969/IDR`.
+Starting point: `sarog/IDR` modern fork. Current experimental fork: `jonsan1969/IDR`.
 
 ## Working branch
 
 `agent/portable-core-smoke`
 
-Do not treat `main` as containing the portability work yet. `main` is intentionally left untouched while the approach is validated.
+`main` remains untouched. Do not merge or open an upstream PR until the experiment has produced a coherent portable target.
 
-## CI workflow
+## CI baseline
 
-`.github/workflows/portable-core-smoke.yml`
+Workflow: `.github/workflows/portable-core-smoke.yml`
 
-Runner:
+- `windows-latest` (currently Windows Server 2025 / VS2026 image)
+- MSVC x86 via `vswhere.exe` + `vcvars32.bat`
+- `actions/checkout@v6` (Node 24 generation)
+- no Node 20 helper actions
+- `concurrency.cancel-in-progress: true`
+- `docs/**` ignored for push-triggered CI
 
-- `windows-latest`
-- Currently resolves to Windows Server 2025 / VS2026 hosted runner
-- MSVC x86 is initialized with `vswhere` + `vcvars32.bat`
+x86 is intentional because legacy `Disasm.cpp` contains inline x86 assembly that MSVC cannot compile in x64 mode.
 
-Actions policy:
+## Proven portable so far
 
-- Uses `actions/checkout@v6`
-- Avoid Node.js 20 based Actions
-- No `ilammy/msvc-dev-cmd@v1`; MSVC setup is done directly to avoid its Node 20 runtime
-- `concurrency` with `cancel-in-progress: true` is enabled to avoid queues of stale smoke runs
-- `docs/**` is ignored for push-triggered CI so documentation-only commits do not start compiler runs
-
-## What is proven to compile with MSVC on GitHub-hosted Actions
-
-The following have been successfully compiled on the hosted runner:
+Successfully compiled on GitHub-hosted MSVC x86:
 
 - `Disasm.h`
 - `KnowledgeBase.h`
 - `Infos.h`
-- a generated portable copy of `Decompiler.h`
-- real `Disasm.cpp` implementation, compiled as x86 after a small generated portability transformation
-- real slices of `Decompiler.cpp`, progressively expanded through decompiler state, register handling, stack/FPU handling, prototype checking, full `TDecompiler::Init()`, and branch-range analysis
+- generated portable `Decompiler.h`
+- real `Disasm.cpp` after a small generated syntax/compatibility transform
+- primary real `Decompiler.cpp` slice from `GetString()` through the complete `TDecompiler::Init()`
+- independent branch-analysis slice through `GetBJLRange()` and the complete `CreateBJLSequence()`
 
-### Successful decompiler implementation coverage so far
+### Primary decompiler slice milestone
 
-The tested primary slice has reached through code covering:
+Run #27 is the key primary-slice milestone: the complete `TDecompiler::Init()` path compiles with MSVC x86 without importing VCL.
 
-- `GetString`
-- `GetFieldName`
-- `GetArgName`
-- `GetGvarName`
-- direct/inverted condition helpers
-- `InitItem`
-- `AssignItem`
-- `TNamer`
-- `TForInfo`
-- `TWhileInfo`
-- `TLoopInfo`
-- `TDecompileEnv` construction/destruction
-- local variable naming
-- context save/restore
-- `TDecompiler` construction/destruction
-- decompiler flag handling, including `InitFlags`
-- register item handling (`SetRegItem`, `GetRegItem`, `GetRegType`)
-- stack handling (`Push`, `Pop`)
-- FPU stack handling (`FGet`, `FSet`, `FXch`, `FPush`, `FPop`)
-- `CheckPrototype`
-- full `TDecompiler::Init()` including calling-convention argument setup and return-type handling
+Coverage includes naming helpers, ITEM manipulation, loop/environment objects, saved context, register state, normal/FPU stacks, prototype checking, decompiler flags and calling-convention/return-value setup.
 
-Run #17 was fully green after adding STL-backed replacements for the minimal `TList`/`TStringList` behavior needed by the slice.
+### Branch-analysis milestones
 
-Run #19 failed only because the isolated slice did not yet define the core flags `cfPass` and `cfLoc`. The failure was not a compiler, STL, stack, or VCL architectural blocker.
+- #30 red: missing declaration of core helper `BranchGetPrevInstructionType()` from mixed VCL/core `Misc.h`.
+- #31 green: complete `GetBJLRange()` compiles after exposing only that helper declaration.
+- #33 red: first real Embarcadero `String` semantic mismatch, at `String(m)` / `String(m + 1)` in `CreateBJLSequence()`.
+- #34 green: complete `CreateBJLSequence()` compiles after the generated smoke copy maps those numeric conversions to `std::to_string(...)`.
 
-Run #23 was fully green after adding only the missing core flag definitions. This confirmed the expanded slice through `InitFlags`, register handling, and `Push`/`Pop`.
+Run #34 also confirms the STL-backed `TList` operations currently needed by BJL code work for compile portability:
 
-Run #24 failed only on missing `ikFunc`; the FPU code itself had compiled. Run #25 was fully green after adding that core kind constant.
+- `Count`
+- `Items[]`
+- `Add()`
+- `Clear()`
+- `Delete(index)`
 
-Run #26 expanded through all of `TDecompiler::Init()` and failed only on four more core constants trapped in `Main.h`: `cfImport`, `ikFloat`, `ikLString`, and `ikRecord`.
+## Current active test
 
-Run #27 was fully green after adding those four constants. This is an important milestone: the complete `TDecompiler::Init()` implementation now compiles with MSVC x86 on a stock GitHub-hosted Windows runner without pulling in VCL.
+The branch-analysis slice has now been extended through:
 
-## Current phase: branch/loop analysis slice
+- `UpdateBJLList()`
+- complete `BJLAnalyze()`
 
-The primary contiguous slice stops immediately before `OutputSourceCodeLine()`, where direct GUI coupling begins through `FMain_11011981`.
+and stops immediately before `BJLGetIdx()`.
 
-Rather than force GUI code into the portable core, a second independent implementation slice begins at:
+The commit triggering this test is `cef522d6e7b4aec18002b2a9e7a298a9203ab8ad`.
 
-`TDecompileEnv::GetBJLRange()`
+If it fails, fetch that new failing run log once only, fix the complete batch of errors from that result, and never refetch the same failed log.
 
-This targets branch/jump/loop analysis while deliberately skipping `OutputSourceCode*()` and `DecompileProc()` presentation/orchestration code.
+## Compatibility layer status
 
-Run #30 failed only because the isolated slice lacked the declaration of global core helper `BranchGetPrevInstructionType()` from `Misc.h`.
+`tests/portable_core_compat.h` currently supplies:
 
-Run #31 was fully green after exposing only that core helper declaration. This proves `GetBJLRange()` itself compiles with MSVC x86 without including VCL-heavy `Misc.h`.
-
-The branch slice is now being expanded through the complete `CreateBJLSequence()` implementation. The compatibility layer has gained only the list mutation semantics that function demonstrably uses:
-
-- `TList::Clear()`
-- `TList::Delete(index)`
-
-The slice also declares `GetDirectCondition()` and `GetInvertCondition()` explicitly rather than importing the larger original environment.
-
-## Current portability strategy
-
-Do not rewrite the original source tree wholesale yet.
-
-The current method is deliberately conservative:
-
-1. Leave original IDR source files unchanged.
-2. Generate portable test copies/slices under `tests/generated` during CI.
-3. Replace only compiler/runtime-specific constructs required for the tested slice.
-4. Compile the resulting code using MSVC x86.
-5. Split around known UI blocks rather than dragging VCL into headless code.
-6. Expand each core slice until a genuine architectural blocker is found.
-
-This separates proof of portability from invasive source refactoring.
-
-## Compatibility layer
-
-`tests/portable_core_compat.h`
-
-Current concepts supplied by the test compatibility layer include:
-
-- `Byte`, `Word`, `DWord` using `<cstdint>`
-- `String` currently mapped to `std::string`
-- `__fastcall` compatibility macro
-- minimal STL-backed `TList`, now including `Count`, `Items[]`, `Add()`, `Clear()`, and `Delete()`
+- `Byte`, `Word`, `DWord` via `<cstdint>`
+- temporary `String = std::string`
+- neutralized `__fastcall`
+- minimal STL-backed `TList`
 - minimal STL-backed `TStringList`
-- minimal `Exception` replacement using the standard C++ exception model
-- selected core flags/kinds normally trapped in `Main.h`, including `cfImport`, `cfPass`, `cfLoc`, `cfSkip`, `ikFloat`, `ikLString`, `ikRecord`, and `ikFunc`
+- standard-C++ `Exception` shim
+- selected core flags/kinds trapped in `Main.h`: `cfImport`, `cfPass`, `cfLoc`, `cfSkip`, `ikFloat`, `ikLString`, `ikRecord`, `ikFunc`
 
-These are intentionally incomplete. Add only semantics actually required by IDR code as the smoke-test boundary expands.
+Important: `String = std::string` is only a compile shim, not a semantic replacement. Run #33 proved numeric construction differs. Other Embarcadero semantics still to map include 1-based indexing, `Pos()`, `SubString()`, case-insensitive helpers and Unicode behavior.
 
-## Important architectural findings
+## Architectural boundaries found
 
 ### `Main.h`
 
-`Main.h` mixes core data structures, flag constants, and VCL GUI definitions. A future clean port will probably split reusable analysis structures/constants into a compiler-neutral header such as `IdrTypes.h` or `CoreTypes.h`.
-
-Runs #19 through #27 provide concrete evidence: several harmless decompiler flags/type-kind constants had to be duplicated in the isolated portability layer solely because their canonical definitions currently live inside VCL-heavy `Main.h`.
+Mixes core records/constants with VCL GUI state. Future clean port should move reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`) consumed by both core and VCL code.
 
 ### `Misc.h`
 
-`Misc.h` has the same mixed-responsibility problem: pure analysis helpers such as `BranchGetPrevInstructionType()` live alongside VCL-facing helpers involving forms, canvases, clipboard operations and dialogs.
-
-The #30 -> #31 transition proved that `GetBJLRange()` needs only the core helper declaration, not the rest of `Misc.h`.
+Also mixes responsibilities. Pure analysis APIs such as `BranchGetPrevInstructionType()` sit beside `TForm`, `TCanvas`, clipboard and dialog helpers. #30 -> #31 proved the analysis API can be separated from the UI half.
 
 ### GUI boundary after `TDecompiler::Init()`
 
-Immediately after the now-portable `Init()` function, `OutputSourceCodeLine()` writes directly through `FMain_11011981->lbSourceCode`. `OutputSourceCode()` also relies on VCL/Embarcadero string behavior and the form.
+Immediately afterward, `OutputSourceCodeLine()` writes directly to `FMain_11011981->lbSourceCode`; `OutputSourceCode()` also depends on Embarcadero string behavior. This block is intentionally skipped in the headless core experiment.
 
-This is treated as a presentation boundary, not as evidence that the underlying decompiler/branch-analysis algorithms require VCL.
+### Other UI-heavy areas
 
-### `TypeInfo2`
+- `InputDlg.*`: pure UI
+- `Resources.*`: VCL/DFM-heavy
+- `TypeInfo2.*`: useful RTTI logic mixed with a VCL form; later extract RTTI core helpers
 
-`TypeInfo2.h/.cpp` mixes RTTI logic with a VCL `TForm`. For a portable core, RTTI functionality such as `GetRTTI`, `GetCppTypeInfo` and `Guid2String` should eventually be separated from the form class.
+## Working rules
 
-### `InputDlg`
-
-`InputDlg` is pure UI and should not be part of the headless core. Any decompiler path that requests interactive user input should eventually use a callback/interface or be disabled in CLI mode.
-
-### `Resources`
-
-`Resources.*` is strongly tied to VCL/forms/DFM handling and is not part of the initial headless portability target.
-
-## Warnings seen under MSVC
-
-These do not currently stop compilation:
-
-- old CRT calls such as `sprintf`, `strcat`, `strcpy`
-- unused variables in legacy code
-- signed/unsigned comparison warnings
-- x86 inline assembly touching `ebp` in `Disasm.cpp`
-
-Do not modernize these while proving portability unless necessary. Functional porting and cleanup/security modernization should remain separate changes to reduce regression risk.
-
-## Why x86 first
-
-IDR is historically a Win32 Delphi reverse-engineering application, and `Disasm.cpp` contains Borland-style inline x86 assembly. MSVC supports inline assembly for x86 but not x64, so the first portable build target is intentionally Win32/x86.
-
-A future x64 port would require rewriting/replacing those inline-assembly sections.
-
-## Immediate next steps
-
-1. Compile the expanded branch slice through `CreateBJLSequence()`.
-2. Resolve only the concrete compatibility gaps revealed there; likely watchpoint is Borland `String(int)` semantics in expression numbering.
-3. Continue through `UpdateBJLList()` and the BJL expression/loop-analysis helpers while avoiding the known GUI output block.
-4. Map how much of `Infos.cpp`, `KnowledgeBase.cpp`, `Misc.cpp`, `Analyze1.cpp`, `Analyze2.cpp`, and `AnalyzeArguments.cpp` can compile with the same compatibility layer.
-5. Once enough implementation is proven portable, introduce a real `idr-core` target rather than generated smoke slices.
-6. Add a minimal `idr-cli` executable only after core linkage is practical.
-7. Leave the original VCL GUI build path intact during this work.
+- Preserve original source; generated transformed copies/harnesses only during mapping.
+- Add compatibility semantics only when actual code requires them.
+- Do not mix CRT/security modernization with functional portability work.
+- Do not attempt x64 yet.
+- Do not pull GUI code into core just to keep source slices contiguous.
+- Fetch a failed Actions log once per run; successful runs need status/job verification only, not logs.
+- Keep these docs updated at meaningful milestones.
 
 ## Success criterion
 
-The useful milestone is not merely compiling individual headers. The target is:
-
 `windows-latest` -> MSVC x86 -> portable IDR core -> headless `idr-cli.exe` -> GitHub Actions artifact
 
-without Embarcadero C++Builder, paid tooling, or a self-hosted runner.
+without Embarcadero C++Builder, paid CI tooling or a self-hosted runner.

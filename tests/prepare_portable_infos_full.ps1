@@ -12,11 +12,16 @@ $src = $src -replace '(?m)^\s*#include\s*"Misc\.h"\s*\r?\n', ''
 $src = $src -replace '(?m)^\s*#pragma\s+hdrstop\s*\r?\n', ''
 $src = $src -replace '(?m)^\s*#pragma\s+package\([^\r\n]+\)\s*\r?\n', ''
 
+# Replace the one remaining Main-form data dependency with the same explicit
+# headless session seam used by the full Misc TU.
+$src = $src -replace 'FMain_11011981->WrkDir', 'PortableWorkDir()'
+
 # Narrow Borland String transforms used by Infos.cpp.
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Pos\(([^\r\n\)]+)\)', 'PortableInfosStringPos($1, $2)'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.SubString\(([^,\r\n]+),\s*([^\)\r\n]+)\)', 'PortableInfosSubString($1, $2, $3)'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Trim\(\)', 'PortableInfosTrim($1)'
 $src = $src -creplace 'String\(([^\r\n\)]*)\)\.Trim\(\)', 'PortableInfosTrim(String($1))'
+$src = $src -creplace 'String\(argInfo->Size\)', 'std::to_string(argInfo->Size)'
 $src = $src -replace '\.Length\(\)', '.size()'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.IsEmpty\(\)', '$1.empty()'
 $src = $src -replace '\bTrue\b', 'true'
@@ -46,6 +51,15 @@ DWord __fastcall Pos2Adr(int pos);
 bool __fastcall IsFlagSet(DWord flag, int pos);
 String __fastcall IntToHex(__int64 value, int digits);
 String __fastcall QuotedStr(const String &value);
+int __fastcall FieldsCmpFunction(void *item1, void *item2);
+Byte __fastcall GetTypeKind(String typeName, int *size);
+int __fastcall StrGetRecordFieldOffset(String str);
+String __fastcall StrGetRecordFieldName(String str);
+String __fastcall StrGetRecordFieldType(String str);
+String __fastcall GetDefaultProcName(DWord adr);
+String __fastcall Val2Str0(DWord value);
+String __fastcall SanitizeName(String name);
+String PortableWorkDir();
 
 template <typename T>
 static void PortableInfosCleanupList(TList *&list) {

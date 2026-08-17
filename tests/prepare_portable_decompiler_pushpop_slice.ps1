@@ -45,10 +45,12 @@ $prefix += @'
 String __fastcall GetGvarName(DWord adr);
 String __fastcall GetInvertCondition(char c);
 bool __fastcall GetArrayIndexes(String typeName, int dim, int *lowIdx, int *highIdx);
+int __fastcall GetClassSize(DWord adr);
 String __fastcall FloatToStr(float value);
 String __fastcall FloatToStr(double value);
 String __fastcall FloatToStr(long double value);
 String __fastcall FloatToStr(Comp value);
+String __fastcall FloatToStr(Currency value);
 // C++Builder Variant accepted textual values implicitly. Keep that conversion
 // as an explicit smoke overload until the portable Variant boundary is real.
 String __fastcall GetEnumerationString(String typeName, String value);
@@ -57,7 +59,8 @@ String __fastcall GetEnumerationString(String typeName, String value);
 
 $numericStringArgs = @(
     '_offset', '_foffset', '_fofs', '_pow2', '_mod', '_size', '_sz', '_ofs', '_pos', '_idx', '_idx1', '_lIdx', '_hIdx', '_cnt', '_classSize', '_ap', '_adr', '_ea', '_cmpRes', '_len', '_N', '_N1',
-    '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_itemBase.IntValue', '_itemSrc.IntValue', '_itemDst.IntValue',
+    'item.IntValue', '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_itemBase.IntValue', '_itemSrc.IntValue', '_itemDst.IntValue',
+    'Env->Stack[varIdxInfo.IdxValue].IntValue',
     'DisInfo.Immediate', 'DisInfo.Offset', 'DisInfo.Scale', 'ADisInfo->Immediate', 'ADisInfo->Offset', 'ADisInfo->Scale'
 )
 foreach ($arg in $numericStringArgs) {
@@ -66,6 +69,8 @@ foreach ($arg in $numericStringArgs) {
 }
 $body = $body -replace 'String\(_N1\s*-\s*_N2\)', 'std::to_string(_N1 - _N2)'
 $body = $body -replace 'String\(_N1\s*-\s*1\)', 'std::to_string(_N1 - 1)'
+$body = $body -replace 'String\(intTo\s*-\s*1\)', 'std::to_string(intTo - 1)'
+$body = $body -replace 'String\(intTo\s*\+\s*1\)', 'std::to_string(intTo + 1)'
 $body = $body -replace '(?<![A-Za-z0-9_])True(?![A-Za-z0-9_])', 'true'
 $body = $body -replace '(?<![A-Za-z0-9_])False(?![A-Za-z0-9_])', 'false'
 $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Pos\(([^\r\n\)]+)\)', 'PortableStringPos($1, $2)'

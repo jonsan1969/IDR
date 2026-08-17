@@ -21,6 +21,7 @@ using AnsiString = std::string;
 using Variant = std::int64_t;
 using Comp = std::int64_t;
 using TColor = unsigned long;
+using TObject = void;
 
 struct Currency {
     std::int64_t Val = 0;
@@ -78,6 +79,11 @@ public:
             index = static_cast<int>(Strings.size()) - 1;
         }
         Count = static_cast<int>(Strings.size());
+        return index;
+    }
+    int AddObject(const String &value, TObject *object) {
+        const int index = Add(value);
+        Objects[static_cast<std::size_t>(index)] = object;
         return index;
     }
     int IndexOf(const String &value) const {

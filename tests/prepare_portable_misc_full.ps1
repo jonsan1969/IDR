@@ -76,24 +76,53 @@ foreach ($signature in $guiOwned) {
     $src = Remove-CppFunction $src $signature
 }
 
+# Main-form access becomes explicit headless seams instead of dragging TForm
+# into the analysis TU. The definitions are intentionally left to the next
+# integration layer so the linker keeps these dependencies visible.
+$src = $src -replace 'FMain_11011981->EstimateProcSize\(([^\)]+)\)', 'PortableEstimateProcSize($1)'
+$src = $src -replace 'FMain_11011981->WrkDir', 'PortableWorkDir()'
+
 # Narrow Embarcadero String compatibility transforms for the generated copy.
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Pos\(([^\r\n\)]+)\)', 'PortableStringPos($1, $2)'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.SubString\(([^,\r\n]+),\s*([^\)\r\n]+)\)', 'PortableSubString($1, $2, $3)'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Trim\(\)', 'PortableTrim($1)'
+$src = $src -replace '([A-Za-z_][A-Za-z0-9_]*)\.LastDelimiter\(([^\)\r\n]+)\)', 'PortableLastDelimiter($1, $2)'
 $src = $src -replace '\.Length\(\)', '.size()'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.SetLength\(([^\)\r\n]+)\)', '$1.resize($2)'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.IsEmpty\(\)', '$1.empty()'
 $src = $src -replace '\bTrue\b', 'true'
 $src = $src -replace '\bFalse\b', 'false'
+$src = $src -replace '\bStrToInt\(', 'PortableStrToInt('
+$src = $src -replace 'UpperCase\(Reg32Tab\[([^\]]+)\]\)', 'PortableUpperCase(String(Reg32Tab[$1]))'
+$src = $src -replace 'String\(Idx - 31\)', 'std::to_string(Idx - 31)'
 
 $prefix = @'
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <cstdlib>
 #include <string>
 #include "../../portable/core/IdrLegacyCompat.h"
 #include "Decompiler.portable.h"
 #include "Misc.portable.h"
+
+#ifndef MAXSTRBUFFER
+#define MAXSTRBUFFER 10000
+#endif
+
+// Pure records historically declared in Main.h and used by Misc analysis.
+struct TypeRec { Byte kind; DWord adr; String name; };
+using PTypeRec = TypeRec *;
+struct CaseInfo { int caseno; int count; };
+struct VmtListRec { int height; DWord vmtAdr; String vmtName; };
+using PVmtListRec = VmtListRec *;
+
+PTypeRec __fastcall GetOwnTypeByName(String AName);
+String __fastcall IntToHex(__int64 value, int digits);
+bool __fastcall SameText(const String &left, const String &right);
+String __fastcall QuotedStr(const String &value);
+int PortableEstimateProcSize(DWord address);
+String PortableWorkDir();
 
 int PortableStringPos(const String &text, const String &needle) {
     const auto pos = text.find(needle);
@@ -110,6 +139,25 @@ String PortableTrim(const String &text) {
     if (first == text.end()) return "";
     const auto last = std::find_if_not(text.rbegin(), text.rend(), [](unsigned char ch) { return std::isspace(ch) != 0; }).base();
     return String(first, last);
+}
+int PortableLastDelimiter(const String &text, const String &delimiters) {
+    const auto pos = text.find_last_of(delimiters);
+    return pos == String::npos ? 0 : static_cast<int>(pos) + 1;
+}
+String PortableUpperCase(String text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::toupper(ch));
+    });
+    return text;
+}
+int PortableStrToInt(const String &text) {
+    if (text.empty()) return 0;
+    std::size_t used = 0;
+    const int base = text[0] == '$' ? 16 : 10;
+    const char *start = text.c_str() + (base == 16 ? 1 : 0);
+    const long value = std::strtol(start, nullptr, base);
+    (void)used;
+    return static_cast<int>(value);
 }
 
 '@

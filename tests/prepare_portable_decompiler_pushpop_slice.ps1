@@ -20,6 +20,7 @@ $engine = Get-Content -Raw -LiteralPath "$PSScriptRoot\generated\Decompiler.engi
 $prefixEnd = $engine.IndexOf('DWord __fastcall TDecompiler::Decompile(')
 if ($prefixEnd -lt 0) { throw 'Portable engine prefix marker not found' }
 $prefix = $engine.Substring(0, $prefixEnd)
+$prefix += "`nString __fastcall GetGvarName(DWord adr);`n"
 
 $numericStringArgs = @(
     '_offset', '_foffset', '_pow2', '_mod', '_size', '_sz', '_ofs', '_idx', '_idx1', '_classSize', '_ap', '_adr', '_ea', '_cmpRes',
@@ -30,6 +31,7 @@ foreach ($arg in $numericStringArgs) {
     $escaped = [regex]::Escape($arg)
     $body = $body -replace "(?<![A-Za-z0-9_])String\($escaped\)", "std::to_string($arg)"
 }
+$body = $body -replace '(?<![A-Za-z0-9_])True(?![A-Za-z0-9_])', 'true'
 $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Pos\(([^\r\n\)]+)\)', 'PortableStringPos($1, $2)'
 $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.SubString\(([^,\r\n]+),\s*([^\)\r\n]+)\)', 'PortableSubString($1, $2, $3)'
 $body = $body -replace '\.Length\(\)', '.size()'

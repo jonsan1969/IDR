@@ -74,12 +74,15 @@ int main() {
     const auto bOffset = static_cast<std::size_t>(AddressToOffset(kTargetB));
     const auto entryOffset = static_cast<std::size_t>(AddressToOffset(kBase));
     const auto requiredTargetFlags = CodeFlags::Loc | CodeFlags::Instruction | CodeFlags::Code;
+    const auto requiredProcedureFlags = requiredTargetFlags | CodeFlags::ProcStart;
 
     if (!analysis.IsFlagSet(CodeFlags::Call, entryOffset) ||
         !analysis.IsFlagSet(CodeFlags::Call, aOffset) ||
+        !analysis.IsFlagSet(CodeFlags::ProcStart, entryOffset) ||
         (analysis.Flags()[branchOffset] & requiredTargetFlags) != requiredTargetFlags ||
-        (analysis.Flags()[aOffset] & requiredTargetFlags) != requiredTargetFlags ||
-        (analysis.Flags()[bOffset] & requiredTargetFlags) != requiredTargetFlags) {
+        analysis.IsFlagSet(CodeFlags::ProcStart, branchOffset) ||
+        (analysis.Flags()[aOffset] & requiredProcedureFlags) != requiredProcedureFlags ||
+        (analysis.Flags()[bOffset] & requiredProcedureFlags) != requiredProcedureFlags) {
         std::cerr << "control-flow probe produced unexpected analysis flags\n";
         return 3;
     }
@@ -87,6 +90,7 @@ int main() {
     std::cout << "neutral-control-flow=ok\n";
     std::cout << "entry-block-count=" << result.entryBlocks.size() << '\n';
     std::cout << "candidate-count=" << result.candidates.size() << '\n';
+    std::cout << "procedure-start-count=" << (result.candidates.size() + 1) << '\n';
     std::cout << "edge-count=" << result.edges.size() << '\n';
     return 0;
 }

@@ -170,7 +170,12 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
             if (!block.instructions.empty()) blocks.push_back(std::move(block));
         }
 
-        return !flatTrace.empty();
+        if (flatTrace.empty()) return false;
+        const int procedureOffset = AddressToOffset(procedureAddress);
+        if (procedureOffset < 0 ||
+            !analysis.SetFlag(CodeFlags::ProcStart, static_cast<std::size_t>(procedureOffset)))
+            return fail("cannot mark procedure start state");
+        return true;
     };
 
     if (!analyzeProcedure(entryPoint, result.entryTrace, result.entryBlocks))

@@ -106,9 +106,11 @@ int wmain(int argc, wchar_t **argv) {
     const int entryOffset = idr::core::AddressToOffset(session.entryPoint);
     const auto entryFlags = (entryOffset >= 0 && session.flags)
         ? session.flags[static_cast<std::size_t>(entryOffset)] : 0;
-    const auto requiredEntryFlags = idr::core::CodeFlags::Instruction | idr::core::CodeFlags::Code;
+    const auto requiredEntryFlags = idr::core::CodeFlags::ProcStart |
+                                    idr::core::CodeFlags::Instruction |
+                                    idr::core::CodeFlags::Code;
     if ((entryFlags & requiredEntryFlags) != requiredEntryFlags) {
-        std::cerr << "idr-cli: legacy flags view did not observe entry trace state\n";
+        std::cerr << "idr-cli: legacy flags view did not observe entry procedure state\n";
         idr::core::ResetLegacyLoadedPeSession();
         return 8;
     }
@@ -118,6 +120,7 @@ int wmain(int argc, wchar_t **argv) {
         const auto flags = (offset >= 0 && session.flags)
             ? session.flags[static_cast<std::size_t>(offset)] : 0;
         const auto required = idr::core::CodeFlags::Loc |
+                              idr::core::CodeFlags::ProcStart |
                               idr::core::CodeFlags::Instruction |
                               idr::core::CodeFlags::Code;
         if ((flags & required) != required) {
@@ -185,6 +188,7 @@ int wmain(int argc, wchar_t **argv) {
     std::cout << "candidate-discovered-count=" << flow.discoveredCandidateCount << '\n';
     std::cout << "candidate-block-count=" << candidateBlockCount << '\n';
     std::cout << "candidate-instruction-count=" << candidateInstructionCount << '\n';
+    std::cout << "procedure-start-count=" << (flow.candidates.size() + 1) << '\n';
     std::cout << "entry-flags=0x"
               << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << entryFlags
               << std::dec << std::setfill(' ') << '\n';

@@ -37,11 +37,11 @@ Successfully compiled on GitHub-hosted MSVC x86:
 - generated portable `Decompiler.h`
 - real `Disasm.cpp` after a small generated syntax/compatibility transform
 - primary real `Decompiler.cpp` slice from `GetString()` through the complete `TDecompiler::Init()`
-- independent branch-analysis slice through `GetBJLRange()` and the complete `CreateBJLSequence()`
+- independent branch-analysis slice through `GetBJLRange()`, `CreateBJLSequence()`, `UpdateBJLList()` and complete `BJLAnalyze()`
 
-### Primary decompiler slice milestone
+### Primary decompiler milestone
 
-Run #27 is the key primary-slice milestone: the complete `TDecompiler::Init()` path compiles with MSVC x86 without importing VCL.
+Run #27: complete `TDecompiler::Init()` compiles with MSVC x86 without importing VCL.
 
 Coverage includes naming helpers, ITEM manipulation, loop/environment objects, saved context, register state, normal/FPU stacks, prototype checking, decompiler flags and calling-convention/return-value setup.
 
@@ -49,29 +49,32 @@ Coverage includes naming helpers, ITEM manipulation, loop/environment objects, s
 
 - #30 red: missing declaration of core helper `BranchGetPrevInstructionType()` from mixed VCL/core `Misc.h`.
 - #31 green: complete `GetBJLRange()` compiles after exposing only that helper declaration.
-- #33 red: first real Embarcadero `String` semantic mismatch, at `String(m)` / `String(m + 1)` in `CreateBJLSequence()`.
+- #33 red: first real Embarcadero `String` semantic mismatch at `String(m)` / `String(m + 1)`.
 - #34 green: complete `CreateBJLSequence()` compiles after the generated smoke copy maps those numeric conversions to `std::to_string(...)`.
+- #35 green: complete `UpdateBJLList()` and complete `BJLAnalyze()` compile with no additional portability shim.
 
-Run #34 also confirms the STL-backed `TList` operations currently needed by BJL code work for compile portability:
-
-- `Count`
-- `Items[]`
-- `Add()`
-- `Clear()`
-- `Delete(index)`
+Run #34/#35 also confirm the current STL-backed `TList` operations used by the BJL code compile cleanly: `Count`, `Items[]`, `Add()`, `Clear()`, and `Delete(index)`.
 
 ## Current active test
 
-The branch-analysis slice has now been extended through:
+The branch-analysis slice is now extended through the remaining non-printing BJL helpers and stops immediately before `PrintBJL()`.
 
-- `UpdateBJLList()`
-- complete `BJLAnalyze()`
+The active span now adds:
 
-and stops immediately before `BJLGetIdx()`.
+- `BJLGetIdx()`
+- `BJLCheckPattern1()`
+- `BJLCheckPattern2()`
+- `BJLFindLabel()`
+- `BJLSeqSetStateU()`
+- `BJLListSetUsed()`
+- `ExprGetOperation()`
+- `ExprMerge()`
 
-The commit triggering this test is `cef522d6e7b4aec18002b2a9e7a298a9203ab8ad`.
+Triggering commit: `c299ec9575fcb7355c8703c8f33c378c55092e0f`.
 
-If it fails, fetch that new failing run log once only, fix the complete batch of errors from that result, and never refetch the same failed log.
+`PrintBJL()` is intentionally the next separate boundary because it is likely to expose additional Embarcadero String semantics.
+
+If the active run fails, fetch that new failing run log once only, fix the complete batch of errors from that result, and never refetch the same failed log.
 
 ## Compatibility layer status
 

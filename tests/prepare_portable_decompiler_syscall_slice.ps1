@@ -8,6 +8,8 @@ if ($start -lt 0 -or $end -lt 0 -or $end -le $start) {
 }
 $body = $src.Substring($start, $end - $start)
 
+# End at SimulateInherited so this slice contains only GetSysCallAlias() and
+# SimulateSysCall(); keep later call/inheritance simulation out of this test.
 # Reuse the already-proven engine prefix so dependency declarations stay in
 # sync instead of being copied into every new implementation slice.
 & "$PSScriptRoot\prepare_portable_decompiler_engine_slice.ps1"

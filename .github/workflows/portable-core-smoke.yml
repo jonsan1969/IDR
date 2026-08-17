@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - agent/portable-core-smoke
+    paths-ignore:
+      - 'docs/**'
   workflow_dispatch:
 
 concurrency:

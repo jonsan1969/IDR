@@ -38,6 +38,7 @@ Successfully compiled on GitHub-hosted MSVC x86:
 - real `Disasm.cpp` after a small generated syntax/compatibility transform
 - primary real `Decompiler.cpp` slice from `GetString()` through complete `TDecompiler::Init()`
 - complete independent BJL/branch-analysis slice from `GetBJLRange()` through `PrintBJL()`
+- complete independent main-engine slice containing all of `TDecompiler::Decompile()`
 
 ### Primary decompiler milestone
 
@@ -56,16 +57,26 @@ Run #27: complete `TDecompiler::Init()` compiles with MSVC x86 without importing
 
 The complete BJL slice is now a stable green block. Original source remains unchanged; all portability transforms are generated under `tests/generated`.
 
-## Current active test: Decompiler engine slice
+## Main Decompiler engine milestone
 
-A third independent implementation slice covers complete `TDecompiler::Decompile()` and stops immediately before `TDecompiler::DecompileCaseEnum()`.
+The third independent implementation slice covers complete `TDecompiler::Decompile()` and stops immediately before `TDecompiler::DecompileCaseEnum()`.
 
 - #40: first full engine compile hit MSVC's 100-error cap, overwhelmingly on hidden core declarations/constants from `Main.h`/`Misc.h`.
 - #42: progressed much deeper and exposed additional RTL/String semantics plus the first direct GUI/policy coupling inside `Decompile()`.
 - #44: progressed beyond that UI boundary. It exposed another form-owned analysis call (`FMain_11011981->GetMethodInfo`) and also caught an over-broad smoke transformation that accidentally produced `GetImmstd::to_string`; the generator was corrected instead of changing original source.
 - #46: major convergence milestone. The engine no longer hit the 100-error cap. The remaining errors were a bounded set dominated by numeric `String(...)` conversions, `TStringList::Objects` / `IndexOfName`, `Variant`, record/name/try helpers, and a handful of missing flags/kinds.
+- #48: dependency mapping had converged completely. Only nine concrete String/numeric compatibility errors remained: four numeric-zero assignments to `String`, one direct integer concatenation, and four `String(_imm)` constructions in IMUL simulation. No new core or GUI dependencies appeared.
+- #49: **complete `TDecompiler::Decompile()` compiles successfully with MSVC x86**. All workflow steps were green, including the already-stable header, primary, BJL and `Disasm.cpp` smoke tests.
 
-The #46 remainder has now been batched without touching `Decompiler.cpp`. `TStringList` smoke compatibility gained aligned `Objects` storage and `IndexOfName`; `Variant` has a temporary compile alias; missing try/except/code flags and helper declarations were added; and only explicitly identified numeric `String(...)` forms are translated.
+This is the strongest portability result so far: the main decompiler engine is compiler-portable at object-compilation level once its hidden core dependencies, limited UI-policy seams and observed Embarcadero RTL semantics are made explicit. This is not yet runtime semantic equivalence and not yet a linked CLI.
+
+## Current active test: case-enum slice
+
+A fourth independent implementation slice now isolates complete `TDecompiler::DecompileCaseEnum()` between `Decompile()` and `GetSysCallAlias()`.
+
+Known numeric case-label construction (`String(n + N)` / `String(m + N)`) is translated narrowly to `std::to_string(...)` in the generated smoke copy. The original source remains unchanged.
+
+Keeping this slice independent preserves #49 as a stable main-engine milestone while mapping the next algorithmic block.
 
 ### Engine GUI/interactivity boundary
 
@@ -82,6 +93,7 @@ Virtual-method lookup is analysis logic but is currently owned by the form throu
 Compiler-verified String/RTL differences currently mapped or exposed in generated smoke code:
 
 - numeric `String(int)` -> controlled `std::to_string(...)` transforms
+- numeric values assigned/concatenated directly to Embarcadero `String` -> explicit decimal conversion in generated smoke code where observed
 - `.Length()` -> `.size()`
 - `String::Pos()` -> helper preserving 1-based/zero-not-found semantics
 - `SubString()` -> helper preserving 1-based start semantics
@@ -99,7 +111,7 @@ Compiler-verified String/RTL differences currently mapped or exposed in generate
 
 ### `Main.h`
 
-Mixes core records/constants with VCL GUI state. Runs through #46 strongly support extracting reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
+Mixes core records/constants with VCL GUI state. Runs through #49 strongly support extracting reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
 
 ### `Misc.h`
 

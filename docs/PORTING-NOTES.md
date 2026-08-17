@@ -23,7 +23,7 @@ The integration branch was reconstructed directly from clean `main`; the smoke b
 
 ## Neutral core foundation
 
-The integration branch now contains neutral layers for core types, services, image/segment mapping, analysis helpers, analysis state, instruction navigation and the first decompiler model primitives.
+The integration branch contains neutral layers for core types, services, image/segment mapping, PE32 loading, analysis helpers, analysis state, instruction navigation and the first decompiler model primitives.
 
 The current `AnalysisState` still has a deliberate open fidelity question: neutral range operations allow an exact-end range symmetrically, while original `SetFlags` and `ClearFlags` differ at that boundary.
 
@@ -57,11 +57,7 @@ Adding `Decompiler.portable.obj` to the integration probe exposed **103 unresolv
 
 Small RTL/session bridges reduced the linker frontier while `tests/prepare_portable_misc_full.ps1` was pushed through its compatibility walls.
 
-By #40:
-
-- complete real `Misc.cpp` compiled under MSVC x86;
-- complete real `Decompiler.cpp` compiled in the same build;
-- the linker frontier was down to 46 unresolved externals plus two duplicate generated string helpers.
+By #40 complete real `Misc.cpp` and `Decompiler.cpp` compiled together and the linker frontier was down to 46 unresolved externals plus two duplicate generated string helpers.
 
 The duplicate `PortableStringPos` / `PortableSubString` definitions were localized to their generated TU rather than creating a broader runtime abstraction.
 
@@ -113,21 +109,53 @@ The four remaining seams were connected to real portable or legacy behavior:
 
 Embedded-procedure confirmation was also routed through the same service boundary, and `IdrLegacyBridge` gained a configurable service set with conservative headless defaults.
 
-#49 contained one local bridge defect: `AddressToOffset()` returns an `int` with negative failure codes, but the new code treated it as an optional value. Because the workflow's multi-command `cmd` compile step did not fail immediately, the missing `IdrLegacyBridge.obj` appeared later as `LNK1181`.
+#49 contained one local bridge defect: `AddressToOffset()` returns an `int` with negative failure codes, but the new code treated it as an optional value. The then-current multi-command `cmd` compile step continued after that `cl` failure and exposed the missing object only at link time.
 
-#50 corrected the offset contract.
+#50 corrected the offset contract and completed successfully. At that point the integrated core probe had **zero unresolved externals** and executed successfully.
 
-Run **#50** at commit:
+## PE32 ingestion phase
 
-`242b4a841baeb93abe3eeb0802df262483c10c43` — `Fix portable proc-size offset handling`
+### Legacy semantics extracted from `Main.cpp`
 
-completed successfully, including the linked probe execution.
+The original loader uses PE32/x86 headers to build an analysis-specific image rather than simply memory-mapping `SizeOfImage`.
 
-Current verified chain:
+Important behavior carried into the neutral loader:
 
-`portable core + generated Disasm + KnowledgeBase + Infos + Misc + Decompiler -> MSVC x86 linker -> executable -> runtime probe`
+- `ImageBase` and `SizeOfImage` come from the PE optional header;
+- entry point becomes an absolute VA;
+- section start is `ImageBase + VirtualAddress`;
+- for all but the last section, analysis span is the RVA distance to the next section;
+- the last section uses `VirtualSize`;
+- zero-raw-data sections are unbacked;
+- resource and relocation sections are intentionally excluded from analysis bytes and represented as unbacked;
+- unbacked segments retain the legacy `0x80000` marker;
+- backed segment spans are packed contiguously into the analysis image and gaps inside those spans are zero-filled;
+- `CodeBase` is based on the first section;
+- legacy `CodeSize` behavior corresponds to the total packed backed-analysis size.
 
-There are now **zero unresolved externals in the integrated core probe**.
+This matches the earlier segment-aware `IdrImageContext` model rather than forcing a flat `ImageBase + RVA` byte buffer.
+
+### #51-53: loader compile and runtime
+
+`IdrPeLoader` and a dedicated PE loader probe were added after #50.
+
+The probe creates a controlled PE32 image containing `.text`, `.rsrc`, `.data` and `.bss`, allowing deterministic checks of backed and unbacked section behavior without depending on an external binary fixture.
+
+#51 and #52 both stopped in `IdrPeLoader.cpp` because `Windows.h` exposed the legacy `max` macro, colliding with `std::numeric_limits<T>::max()`.
+
+The important harness improvement was already active: compile commands now use fail-fast `cl ... || exit /b 1`, so these errors stopped in the compile step rather than surfacing later as missing-object linker noise.
+
+#53 at commit:
+
+`a804f7f93e3e59bfddc02f8ef5f5cd25072401f5` — `Avoid Windows max macro in PE32 loader`
+
+completed successfully after making the Windows include/numeric-limits use macro-safe.
+
+Current verified loader path:
+
+`controlled PE32 file -> IdrPeLoader -> packed bytes + SegmentView list -> ActivateLoadedPeImage -> IdrImageContext -> AddressToOffset / OffsetToAddress`
+
+This is the first runtime-tested real file-ingestion path into the portable core.
 
 ## Transitional compatibility surface
 
@@ -161,23 +189,29 @@ Only reached cases are represented. Binary layout and full conversion/formatting
 
 Signedness warnings, old CRT calls, suspicious shift-count expressions and not-all-paths-return warnings remain visible. They should be classified by runtime relevance, not globally modernized.
 
-### Workflow fail-fast weakness
+### Session ownership is still split
 
-#49 demonstrated that the multi-command `cmd` compile step can continue after one `cl` failure and report the failure indirectly at link time. The workflow should be hardened so every compile command fails the step immediately.
+`ActivateLoadedPeImage()` currently makes `ImageContext` authoritative for bytes/segments, but the legacy analysis-facing globals still need to be initialized from the same loaded image:
 
-## Next architectural frontier: executable ingestion
+- entry point;
+- `ImageSize` / `TotalSize`;
+- `CodeBase` / `CodeSize`;
+- neutral `AnalysisState` and legacy `Flags` view;
+- `Infos` pointer storage sized to the packed analysis image.
 
-The linker dependency chase is finished for the current probe. The next useful work is to provide the core with a real target image.
+Until this is unified, a CLI host would need ad-hoc setup similar to the old probe path.
 
-Preferred sequence:
+## Next architectural frontier: one authoritative loaded session
 
-1. isolate PE32 loading semantics from legacy VCL `Main.cpp`;
-2. introduce a neutral loader that owns file bytes and PE section metadata;
-3. populate `ImageView` / `ImageSegments` and legacy image/session views from one authoritative loaded-image object;
-4. test RVA/address/offset mapping against controlled PE32 input;
-5. harden CI compile steps to fail immediately while touching the workflow for the next integration target;
-6. add a minimal headless executable host that opens a file and reports deterministic PE/core metadata;
-7. grow that host into `idr-cli.exe <target.exe>` and then exercise deeper real analysis paths.
+The preferred sequence after #53 is:
+
+1. introduce explicit activation/deactivation of a loaded PE session;
+2. bind `ImageContext` and all reached legacy image/session globals from the same `LoadedPeImage`;
+3. own/reset `AnalysisState` for the packed image and make `Flags` its legacy view;
+4. own/reset the `Infos` pointer array without inventing metadata records;
+5. extend the loader probe to verify those legacy views and reset behavior;
+6. add a minimal executable host that opens a PE32 target and prints deterministic metadata;
+7. grow that host into `idr-cli.exe <target.exe>` and then execute progressively deeper real analysis paths.
 
 ## Working rules
 

@@ -49,3 +49,5 @@ $body = $body -replace 'CmpInfo\.R\s*=\s*0\s*;', 'CmpInfo.R = "0";'
 
 New-Item -ItemType Directory -Force -Path "$PSScriptRoot\generated" | Out-Null
 Set-Content -LiteralPath "$PSScriptRoot\generated\Decompiler.pushpop.slice.cpp" -Value ($prefix + $body) -Encoding utf8
+
+& "$PSScriptRoot\audit_portable_decompiler_coverage.ps1"

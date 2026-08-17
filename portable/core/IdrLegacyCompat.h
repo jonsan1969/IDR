@@ -20,6 +20,7 @@ using String = std::string;
 using AnsiString = std::string;
 using Variant = std::int64_t;
 using Comp = std::int64_t;
+using TColor = unsigned long;
 
 struct Currency {
     std::int64_t Val = 0;
@@ -93,10 +94,11 @@ public:
     }
 };
 
-// Only needed so the legacy Misc declarations can be parsed. GUI behavior is
-// never provided by this bridge.
+// Parse-only GUI placeholders. No GUI behavior is implemented here.
 class TForm {};
 class TStrings {};
+class TCanvas {};
+struct TRect { int Left = 0; int Top = 0; int Right = 0; int Bottom = 0; };
 
 // Core analysis flags/kinds historically supplied by Main.h.
 #define cfCode          0x00000001

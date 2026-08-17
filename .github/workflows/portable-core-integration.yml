@@ -18,9 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Prepare portable Disasm.cpp
+      - name: Prepare portable real translation units
         shell: pwsh
-        run: .\tests\prepare_portable_disasm.ps1
+        run: |
+          .\tests\prepare_portable_disasm.ps1
+          .\tests\prepare_portable_decompiler_full.ps1
 
       - name: Compile integrated core objects
         shell: cmd
@@ -35,6 +37,13 @@ jobs:
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrDecompilerModel.cpp /Fo:IdrDecompilerModel.obj
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_core_link_probe.cpp /Fo:idr_core_link_probe.obj
           cl /nologo /std:c++17 /W3 /EHsc /I. /c tests\generated\Disasm.portable.cpp /Fo:Disasm.portable.obj
+
+      - name: Compile full legacy Decompiler translation unit
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
+          cl /nologo /std:c++17 /W3 /EHsc /I. /Iportable\core /Itests\generated /c tests\generated\Decompiler.portable.cpp /Fo:Decompiler.portable.obj
 
       - name: Link integrated core probe
         shell: cmd

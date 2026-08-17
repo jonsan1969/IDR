@@ -36,30 +36,33 @@ Generated transformed files live under `tests/generated` during CI. Original IDR
 
 ## Compatibility layer
 
-Fundamental temporary aliases:
-
-```cpp
-using Byte = std::uint8_t;
-using Word = std::uint16_t;
-using DWord = std::uint32_t;
-using String = std::string;
-using AnsiString = std::string;
-```
+Temporary aliases include `Byte`, `Word`, `DWord`, `String = std::string`, `AnsiString = std::string`, a minimal `WideString` wrapper, and a temporary integer-compatible `Variant` alias for compile mapping.
 
 ### Proven String / RTL mismatches
 
-- #33: numeric `String(int)` differs; generated smoke code uses `std::to_string(...)` for observed cases.
-- #36: `String::Length()` maps to `.size()` in generated smoke code.
-- #38: `AnsiReplaceText(...)` is exposed with a narrow compile-time signature.
-- #42: engine reaches `String::Pos()`, `IntToStr`, `IntToHex`, `AnsiString`, and additional numeric `String(...)` calls.
+- #33: numeric `String(int)` differs; generated smoke code uses controlled `std::to_string(...)` transformations.
+- #36: `String::Length()` maps to `.size()` for observed cases.
+- #38: `AnsiReplaceText(...)` exposed with a narrow compile-time signature.
+- #42: engine reaches `String::Pos()`, `IntToStr`, `IntToHex`, `AnsiString`, and further numeric `String(...)` calls.
+- Later engine mapping also reaches `SubString()`, `SetLength()`, `QuotedStr`, and `WideString` behavior.
 
-For `Pos`, the generated engine smoke copy uses a helper that preserves Embarcadero semantics: 1-based result, zero when not found. Do not replace it blindly with raw `std::string::find()` semantics.
+`Pos` and `SubString` helpers preserve Embarcadero's 1-based semantics in generated smoke code. Do not blindly substitute raw `std::string` indexing/find semantics.
 
-Do not introduce a full custom String wrapper until more runtime semantics are known.
+Direct 1-based `String[index]` usage remains a known runtime-semantic risk even when it compiles. A thin compatibility String type may eventually be cleaner than an indefinitely growing transform set, but defer that decision until the observed indexing surface is mapped.
 
-### Core constants trapped in `Main.h`
+### Containers
 
-The compatibility header only grows as tested source demands. By #42 it includes the engine-observed kinds for integer, char, enumeration, float, class, Ansi/Wide/Unicode string families, variant, array, record, Int64, VMT, constructor/destructor, procedure and function, plus the previously mapped analysis flags.
+`TList` remains a non-owning vector-backed smoke shim.
+
+`TStringList` now supports:
+
+- `Strings`
+- aligned `Objects`
+- sorted insertion that keeps `Strings`/`Objects` aligned
+- `IndexOf`
+- `IndexOfName` using `=` as the current name/value separator
+
+This is targeted compatibility, not a claim of full VCL semantics.
 
 ### `Exception`
 
@@ -89,41 +92,34 @@ The third slice covers complete `TDecompiler::Decompile()` only, ending before `
 
 #### Run #40
 
-Hit MSVC's 100-error cap almost entirely on missing core declarations/constants inherited through `Main.h`/`Misc.h`. First batch exposed address/flag helpers, proc/info helpers, decompiler helpers, analysis helpers, Int64 helpers, `Disasm`, `Code`, and `Exception::Message` without importing VCL-heavy headers.
+Hit MSVC's 100-error cap almost entirely on missing core declarations/constants inherited through `Main.h`/`Misc.h`.
 
 #### Run #42
 
-The first batch worked: compilation progressed much deeper into `Decompile()`. The next failure set still contains many pure analysis/type dependencies, including inline-div/mod/length detection, general-case/Int64 helpers, type/record/array functions, procedure metadata helpers and additional type-kind constants.
+Progressed much deeper. Exposed more pure analysis/type dependencies and the first direct engine UI policy: embedded-procedure confirmation through `FMain_11011981` / `Application->MessageBox`. The generated smoke copy maps this to `PortableConfirmEmbeddedProcedure(...)` rather than inventing VCL stubs.
 
-New RTL surface in #42:
+`ManualInput(...)` is also reached by unresolved-call paths and is a future resolver/policy boundary.
 
-```text
-IntToStr
-IntToHex
-AnsiString
-String::Pos
-additional String(int/DWord) construction
-```
+#### Run #44
 
-Most importantly, #42 exposed the first direct UI/interactivity inside the main engine itself.
+Progressed further and found another form-owned analysis API, `FMain_11011981->GetMethodInfo`. Smoke code maps this to neutral `PortableGetMethodInfo(...)`.
 
-##### Embedded procedure policy
+#44 also caught a bug in our own generator: an over-broad textual replacement transformed the tail of `GetImmString(...)` into `GetImmstd::to_string`. The replacement rules were tightened with explicit argument lists / guarded matching. This is a harness bug, not an IDR portability problem.
 
-Original engine code temporarily changes `FMain_11011981->lbCode->ItemIndex` and calls `Application->MessageBox()` asking whether an embedded procedure should be decompiled.
+#### Run #46
 
-The generated smoke copy does **not** fake VCL classes. It neutralizes only list-box selection state and maps the confirmation decision to:
+Major convergence milestone: no 100-error cap. The remaining compile errors were a finite set dominated by:
 
-```cpp
-bool PortableConfirmEmbeddedProcedure(const String &address);
-```
+- more numeric `String(...)` forms
+- `TStringList::Objects` / `IndexOfName`
+- `Variant`
+- record/name helpers (`GetRecordFields`, `ExtractName`, `ExtractType`, `MakeGvar`, etc.)
+- try-analysis helpers (`IsTryBegin`, `IsTryBegin0`)
+- remaining core flags/kinds (`cfCode`, `cfETable`, `cfFinally`, `cfExcept`, `ikMethod`)
 
-This is intentionally shaped like the future core boundary. A real headless API should support a deterministic policy such as always/never/callback.
+Those categories are now batched into the smoke compatibility layer/generator. Numeric String transforms remain deliberately controlled so legitimate `String(char*)` constructors are not corrupted.
 
-##### Manual input policy
-
-`ManualInput(...)` is also reached by the engine when return-byte counts or function types cannot be inferred. It remains an explicit compile dependency for now. In a real core it should become a resolver callback or deterministic CLI error/policy, not a dialog dependency.
-
-This changes the architecture conclusion slightly: `TDecompiler::Decompile()` is overwhelmingly core analysis, but contains small embedded interaction decisions that must be injected/extracted.
+The direction is encouraging: later engine failures are shrinking from broad dependency exposure toward concrete RTL/container semantics rather than discovering large new VCL regions.
 
 ## Mixed-responsibility headers
 
@@ -135,9 +131,9 @@ Core flags/kinds and GUI form state coexist. The growing engine constant set is 
 
 Many pure analysis APIs used by the engine coexist with forms/canvas/dialog helpers. A separate neutral analysis API header is increasingly justified.
 
-### `TypeInfo2.*`
+### Form-owned analysis helpers
 
-Useful RTTI logic remains mixed with a VCL form; later extraction candidate.
+At least `GetMethodInfo` is analysis logic currently owned by `TFMain_11011981`. It should move behind a core service/context rather than stay on a form class.
 
 ## Working rules
 

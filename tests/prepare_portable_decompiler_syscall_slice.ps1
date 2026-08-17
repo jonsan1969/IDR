@@ -1,15 +1,16 @@
 $src = Get-Content -Raw -LiteralPath "$PSScriptRoot\..\Decompiler.cpp"
 $startName = $src.IndexOf('TDecompiler::GetSysCallAlias(')
-$endName = $src.IndexOf('TDecompiler::SimulateInherited(', [Math]::Max($startName, 0))
+$sysName = $src.IndexOf('TDecompiler::SimulateSysCall(', [Math]::Max($startName, 0))
 $start = if ($startName -ge 0) { $src.LastIndexOf('String __fastcall ', $startName) } else { -1 }
-$end = if ($endName -ge 0) { $src.LastIndexOf('void __fastcall ', $endName) } else { -1 }
-if ($start -lt 0 -or $end -lt 0 -or $end -le $start) {
-    throw "Decompiler syscall slice markers not found (startName=$startName start=$start endName=$endName end=$end)"
+$end = if ($sysName -ge 0) { $src.IndexOf("`n//---------------------------------------------------------------------------", $sysName) } else { -1 }
+if ($start -lt 0 -or $sysName -lt 0 -or $end -lt 0 -or $end -le $start) {
+    throw "Decompiler syscall slice markers not found (startName=$startName start=$start sysName=$sysName end=$end)"
 }
 $body = $src.Substring($start, $end - $start)
 
-# End at SimulateInherited so this slice contains only GetSysCallAlias() and
-# SimulateSysCall(); keep later call/inheritance simulation out of this test.
+# The slice contains GetSysCallAlias() plus the complete SimulateSysCall().
+# End at IDR's normal function separator after SimulateSysCall instead of
+# depending on the name/order of whichever function happens to follow it.
 # Reuse the already-proven engine prefix so dependency declarations stay in
 # sync instead of being copied into every new implementation slice.
 & "$PSScriptRoot\prepare_portable_decompiler_engine_slice.ps1"

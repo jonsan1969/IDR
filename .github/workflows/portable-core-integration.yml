@@ -1,15 +1,15 @@
-name: Portable core integration
+name: Portable CLI integration
 
 on:
   push:
     branches:
-      - agent/portable-core-integration
+      - agent/portable-cli
     paths-ignore:
       - 'docs/**'
   workflow_dispatch:
 
 concurrency:
-  group: portable-core-integration-${{ github.ref }}
+  group: portable-cli-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -42,6 +42,8 @@ jobs:
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrLegacyBridge.cpp /Fo:IdrLegacyBridge.obj || exit /b 1
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_core_link_probe.cpp /Fo:idr_core_link_probe.obj || exit /b 1
           cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_pe_loader_probe.cpp /Fo:idr_pe_loader_probe.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_cli.cpp /Fo:idr_cli.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /c tests\idr_cli_fixture.cpp /Fo:idr_cli_fixture.obj || exit /b 1
           cl /nologo /std:c++17 /W3 /EHsc /I. /c tests\generated\Disasm.portable.cpp /Fo:Disasm.portable.obj || exit /b 1
 
       - name: Compile full legacy KnowledgeBase translation unit
@@ -99,3 +101,15 @@ jobs:
       - name: Run PE32 session probe
         shell: cmd
         run: .\idr-pe-loader-probe.exe
+
+      - name: Link first portable CLI and real PE32 fixture
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
+          link /nologo /subsystem:console /out:idr-cli.exe IdrCoreServices.obj IdrImageContext.obj IdrPeLoader.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj IdrDecompilerModel.obj IdrLegacyBridge.obj idr_cli.obj Disasm.portable.obj KnowledgeBase.portable.obj Infos.portable.obj Misc.portable.obj Decompiler.portable.obj || exit /b 1
+          link /nologo /subsystem:console /out:idr-cli-fixture.exe idr_cli_fixture.obj || exit /b 1
+
+      - name: Run portable CLI against real MSVC x86 PE32
+        shell: cmd
+        run: .\idr-cli.exe .\idr-cli-fixture.exe

@@ -10,195 +10,194 @@ Repository: `jonsan1969/IDR` (fork of `sarog/IDR`).
 
 ## Branches
 
-Active integration branch: `agent/portable-core-integration`
+Active product branch: `agent/portable-cli`
 
-Frozen regression/reference branch: `agent/portable-core-smoke`
+Frozen porting/integration reference: `agent/portable-core-integration`
 
-`main` remains untouched. Do not merge or open an upstream PR until the portable target is coherent and runtime-tested.
+Frozen compiler-smoke reference: `agent/portable-core-smoke`
+
+`main` remains untouched at the modern Embarcadero baseline.
+
+`agent/portable-cli` was rebuilt cleanly from `main` with one squash baseline commit containing the verified portable-core/session state, then the verified first CLI step was carried forward. The old integration history remains intact on `agent/portable-core-integration` for archaeology and evidence.
 
 ## CI
 
-Integration workflow: `.github/workflows/portable-core-integration.yml`
+Workflow: `.github/workflows/portable-core-integration.yml`
+
+On the active branch it is configured for `agent/portable-cli` and uses:
 
 - GitHub-hosted Windows Server 2025 / VS2026
 - MSVC x86 via `vswhere.exe` + `vcvars32.bat`
 - `actions/checkout@v6`
-- concurrency cancellation enabled
+- fail-fast compile commands (`cl ... || exit /b 1`)
+- concurrency cancellation
 - `docs/**` ignored for push-triggered CI
-- core compile commands are fail-fast (`cl ... || exit /b 1`)
 
-x86 remains intentional because legacy `Disasm.cpp` contains x86 inline assembly and the shipped `dis.dll` is x86.
+x86 remains intentional because the real legacy `Disasm.cpp` contains x86 inline assembly and the shipped `dis.dll` is x86.
 
-## Smoke phase: complete and frozen
+## Verified milestone entering the CLI branch
 
-`agent/portable-core-smoke` ended with complete 52/52 `TDecompiler` compile-smoke coverage. Keep that branch unchanged as regression/reference coverage.
+The old integration branch ended its useful active phase with run **#57**, commit:
 
-Compile coverage alone does not establish runtime equivalence, especially for Borland 1-based `String` semantics.
+`a0d72d9916b9c458ba3098f7a7d17354d536fba0` — `Introduce first portable IDR CLI`
 
-## Current milestone: real PE32 ingestion reaches the portable core
+Run #57 completed successfully. It built the full portable/legacy analysis chain, linked `idr-cli.exe`, built a real MSVC x86 PE32 fixture and executed:
 
-Run **#53** succeeded at:
+`idr-cli.exe idr-cli-fixture.exe`
 
-`a804f7f93e3e59bfddc02f8ef5f5cd25072401f5` — `Avoid Windows max macro in PE32 loader`
+successfully.
 
-The integration workflow now has two runtime-tested paths:
+The active branch starts from a clean portable-core baseline whose parent is directly `main`:
 
-1. the complete linked analysis-core probe containing generated real legacy `Disasm + KnowledgeBase + Infos + Misc + Decompiler` together with the neutral portable layers;
-2. a neutral PE32 loader probe that constructs and loads a controlled Win32 PE image with `.text`, `.rsrc`, `.data` and `.bss` sections.
+`52788d54...` — original `main`
 
-The loader preserves the analysis-facing semantics extracted from legacy `Main.cpp`:
+`7f3f3fe6...` — `Establish portable MSVC x86 core baseline`
 
-- PE32 / x86 validation;
-- `ImageBase`, `SizeOfImage` and absolute entry point extraction;
-- section-address ordering and span validation;
-- section span based on the next section RVA, with the last section using `VirtualSize`;
-- raw-less sections treated as unbacked;
-- resource and base-relocation sections treated as unbacked;
-- legacy `0x80000` unbacked segment flag;
-- only backed analysis spans stored in the packed byte image;
-- `CodeBase` based on the first PE section;
-- `CodeSize` equal to packed analysis size.
+The CLI commit is layered on top of that clean baseline rather than carrying the entire experimental integration commit history.
 
-Verified loader chain:
+## Current verified architecture
 
-`PE32 file -> neutral loader -> packed backed bytes + segment table -> ImageContext -> address/offset translation`
+The portable target now contains and has runtime evidence for:
 
-This moves the portable target beyond hand-constructed image bytes: it now has a real executable-file ingestion boundary.
+- real generated legacy `Disasm.cpp`
+- complete generated legacy `KnowledgeBase.cpp`
+- complete generated legacy `Infos.cpp`
+- complete generated legacy `Misc.cpp`
+- complete generated legacy `Decompiler.cpp` minus three GUI-owned presentation/orchestration methods
+- neutral core types and services
+- segment-aware `IdrImageContext`
+- `AnalysisState`
+- instruction navigation through the real decoder/dis.dll path
+- neutral PE32/x86 loader
+- legacy session bridge
+- first real `idr-cli.exe` host
 
-## Integration chronology
+The verified end-to-end host path is now:
+
+`PE32 target -> IdrPeLoader -> packed analysis bytes + segments -> legacy session activation -> linked real analysis core -> idr-cli.exe metadata output`
+
+## Important integration milestones retained for reference
 
 ### #23: real decoder runtime
 
-The generated real `Disasm.cpp` translation unit linked and executed against the repository's shipped x86 `dis.dll`.
-
-Verified path:
-
-`image bytes -> ImageContext -> address translation -> MDisasm -> dis.dll -> DISINFO -> instruction navigation`
+Generated real `Disasm.cpp` linked and executed against the repository's shipped x86 `dis.dll`.
 
 ### #24: segment-aware image mapping
 
-`IdrImageContext` gained segment-aware mapping matching legacy `SegmentList` / `Adr2Pos` / `Pos2Adr` behavior, including unbacked segments using the legacy `0x80000` flag.
-
-### #25-26: neutral decompiler model
-
-Neutral decompiler structures and the first runtime primitives were established. The legacy behavior that `AssignItem` does not copy `Offset` remains intentionally preserved.
+`IdrImageContext` gained address/offset mapping compatible with legacy segment semantics, including unbacked `0x80000` segments.
 
 ### #31: whole real Decompiler TU compile
 
-The generated portable build first compiled the complete real `Decompiler.cpp` translation unit, excluding only:
+The complete real `Decompiler.cpp` compiled under MSVC x86, excluding only:
 
 - `TDecompileEnv::OutputSourceCodeLine()`
 - `TDecompileEnv::OutputSourceCode()`
 - `TDecompileEnv::DecompileProc()`
 
-These remain outside the core because they belong to presentation/orchestration, not analysis.
+### #32-48: linker-driven integration
 
-### #32-40: linker-driven dependency discovery and real Misc integration
+The unresolved frontier moved:
 
-Linking the real Decompiler object exposed 103 unresolved externals. Coherent compatibility/session bridges reduced that set while the complete real `Misc.cpp` translation unit was integrated.
+`103 -> 89 -> 73 -> 46 -> 37 -> 29 -> 4`
 
-By #40 both full `Misc.cpp` and full `Decompiler.cpp` compiled together and the linker frontier had fallen to 46 unresolved externals plus two duplicate generated helpers.
+while real `Misc`, `KnowledgeBase`, `Infos` and session/global state were integrated.
 
-### #42-44: real KnowledgeBase integration
+### #49-50: zero unresolved and runnable linked core
 
-The complete real `KnowledgeBase.cpp` translation unit was added. Its compile frontier narrowed to two missing analysis declarations and one dead legacy UID stub before becoming compile-clean.
+The last four explicit headless seams were connected through portable services or real legacy behavior. #50 linked and executed the integrated core probe with zero unresolved externals.
 
-With real KnowledgeBase linked, the unresolved set fell further.
+### #51-53: PE32 ingestion
 
-### #46-47: real Infos integration
+A neutral PE32/x86 loader was extracted from the analysis-facing semantics of legacy `Main.cpp`. #53 completed successfully after the Windows `max` macro collision was removed.
 
-The complete real `Infos.cpp` translation unit was added. After one compatibility pass, all four major real legacy units compiled together:
+The loader preserves:
 
-`KnowledgeBase + Infos + Misc + Decompiler`
+- `ImageBase`, `SizeOfImage` and absolute entry point
+- section-order/span validation
+- next-section RVA span behavior
+- raw-less/resource/relocation sections as unbacked
+- legacy `0x80000` unbacked marker
+- packed backed-analysis bytes
+- first-section `CodeBase`
+- packed-analysis `CodeSize`
 
-The remaining linker set fell to 29 and was dominated by legacy session/global state.
+### #54: one authoritative loaded session
 
-### #48: portable session/state bridge
+`LoadedPeImage` was bound to both the neutral image context and the legacy analysis-facing state:
 
-The portable bridge took ownership of the analysis state actually needed from legacy `Main.cpp`, including:
+- `EP`
+- `ImageBase`
+- `ImageSize`
+- `TotalSize`
+- `CodeBase`
+- `CodeSize`
+- `Code`
+- `AnalysisState -> Flags`
+- `Infos[]`
 
-- `KnowledgeBase`, `Infos`, `Flags`
-- image/code sizes
-- segment/type/VMT lists
-- VMT offsets
-- string buffer state
-- register-name tables
-- class-address cache
-- working-directory seam
+Session activation and reset were runtime-tested.
 
-This reduced the linker frontier from 29 unresolved externals to only four explicit headless analysis seams.
+### #57: first real CLI host
 
-### #49-50: headless service seams and zero unresolved externals
+`idr-cli.exe <target.exe>` was introduced. It loads a PE32 target, activates the same session used by the legacy analysis core, verifies the neutral and legacy views agree, then reports deterministic image and segment metadata.
 
-The remaining seams were connected rather than stubbed away:
+CI builds a real MSVC x86 executable fixture and runs the CLI against it.
 
-- `ManualInput` -> portable service callback
-- method lookup -> portable service callback
-- enumeration formatting -> real `Misc.cpp::GetEnumerationString`
-- procedure-size estimation -> portable image/session/flag state
-- embedded-procedure confirmation -> portable service callback
+## Current CLI behavior
 
-#49 exposed a local bridge compile bug in procedure-size offset handling. #50 corrected the `AddressToOffset()` contract and the entire integrated probe compiled, linked and executed successfully.
+`idr-cli.exe <target.exe>` currently reports:
 
-### #51-53: neutral PE32 loader and runtime probe
+- file path
+- image base
+- image size
+- entry point
+- code base
+- code size
+- packed analysis byte count
+- segment count
+- segment start/size/flags and backed/unbacked state
+- confirmation that the legacy session is bound
 
-The next phase extracted the executable-loading semantics needed by analysis from legacy `Main.cpp` into `IdrPeLoader`.
-
-#51 and #52 both stopped at compile time because `Windows.h` defined the legacy `max` macro and collided with `std::numeric_limits<T>::max()`. The workflow's newly fail-fast compile commands correctly stopped at the real compiler error instead of deferring the symptom to the linker.
-
-#53 made the Windows API include macro-safe and completed successfully. The PE32 loader probe now exercises the packed/unbacked section model at runtime.
-
-## Current architecture boundary
-
-The portable target now has:
-
-- a real linked legacy analysis engine behind a headless policy/state boundary;
-- a neutral x86 PE32 loader with runtime-tested segment packing;
-- one neutral `ImageContext` address/offset model shared by analysis and loader tests.
-
-The remaining gap is that activating a loaded PE currently populates `ImageContext`, while legacy session globals (`ImageSize`, `TotalSize`, `CodeBase`, `CodeSize`, entry point, `Flags`, `Infos`) are not yet initialized from the same authoritative loaded-image/session object.
-
-That is the next boundary to remove before introducing the first useful CLI host.
+It is a real host boundary, but not yet a useful decompiler frontend.
 
 ## Known semantic risks
 
-Loader/link/runtime success does not mean full behavioral equivalence.
+Successful build/link/runtime probes do not establish complete behavioral equivalence.
 
-Important open risks:
+Important open risks include:
 
-- direct Borland 1-based `String[index]` usage can differ from `std::string` 0-based indexing
-- `WideString`, `Variant`, `Currency`, `Comp`, formatting and container behavior remain transitional
-- `AnalysisState::SetFlags` / `ClearFlags` exact-end behavior still differs from the asymmetric legacy implementation and needs intentional resolution
-- legacy warnings such as signedness, old CRT functions and suspicious shift counts remain non-blocking until their runtime paths are exercised
-- `TDecompiler::DecompileTry()` and `GetStringArgument()` retain legacy not-all-paths-return warnings
-- headless defaults for interactive services are intentionally conservative; a CLI host must supply policy where meaningful
-- PE import/export/resource analysis beyond the image/segment ingestion boundary is not yet wired to the headless host.
+- Borland 1-based direct `String[index]` semantics versus `std::string` 0-based indexing
+- incomplete `WideString`, `Variant`, `Currency`, `Comp` and formatting fidelity
+- exact legacy `SetFlags` / `ClearFlags` end-boundary behavior
+- legacy warnings that have not yet reached meaningful runtime paths
+- transitional register/string/container ABI compatibility
+- analysis metadata ownership/lifetime as deeper paths begin creating `InfoRec` structures
+- imports/exports/resources and Delphi-specific discovery are not yet driven by the CLI
 
-## Immediate next phase: authoritative loaded session and first host
+## Immediate next phase
 
-Do not return to method-slice work or linker-stub chasing.
+The linker chase is over and file/session loading is established. Work on `agent/portable-cli` should now be driven by real host behavior.
 
-Next steps:
+Preferred sequence:
 
-1. bind one loaded PE object to both `ImageContext` and the legacy analysis session globals;
-2. allocate/reset neutral analysis flags for the packed image and expose the legacy `Flags` view through that same state;
-3. initialize the legacy `Infos` pointer array for the packed analysis size without inventing metadata;
-4. runtime-test session activation/deactivation and address translation from a controlled PE32 input;
-5. add a minimal headless executable host that opens a target and reports deterministic PE/core metadata;
-6. evolve that host into `idr-cli.exe <target.exe>`;
-7. then execute progressively deeper real analysis/decompiler paths and compare with original IDR on known Delphi Win32 binaries.
+1. add stable CLI options/output structure without over-designing a frontend;
+2. initialize the real decoder from the loaded CLI session and prove entry-point decoding on a real PE32 target;
+3. identify and invoke the first safe legacy analysis initialization path that populates flags/metadata;
+4. audit reached Borland `String` indexing and RTL semantics as runtime paths become real;
+5. add controlled Delphi Win32 fixtures and compare results against original IDR;
+6. progressively expose procedures/types/metadata through CLI output;
+7. later publish `idr-cli.exe` as a GitHub Actions artifact.
 
 ## Working rules
 
-- Preserve original source unless a structural portable-core change is intentional and documented.
-- Let compiler, linker and runtime evidence drive changes.
-- Distinguish harness defects from product portability defects.
-- Stay x86 first.
-- Avoid broad Borland emulation when a narrow neutral API is possible.
-- Keep the smoke branch frozen.
-- Do not push over an active integration run because concurrency cancels it.
-- Do not merge to `main` or open an upstream PR yet.
-- Keep docs updated at meaningful milestones.
+- Compiler/linker/runtime evidence over speculation.
+- Keep architecture-scale changes coherent.
+- Do not disturb the frozen smoke branch.
+- Treat `agent/portable-core-integration` as frozen reference after the #57 milestone.
+- Do not push over an active `agent/portable-cli` workflow run.
+- Preserve original legacy source unless a deliberate structural port warrants changing it.
+- No upstream PR or merge to `main` yet.
+- Keep these docs current at meaningful milestones.
 
 ## Success criterion
 

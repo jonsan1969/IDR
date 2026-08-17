@@ -2,222 +2,231 @@
 
 Last updated: 2026-08-17
 
-Technical journal for the MSVC/GitHub-hosted portable-core work.
+Technical journal for the MSVC/GitHub-hosted portable-core and CLI work.
 
 ## Repository / branches
 
 - Modern Embarcadero baseline: `sarog/IDR`
 - Working fork: `jonsan1969/IDR`
-- Active integration branch: `agent/portable-core-integration`
+- Active product branch: `agent/portable-cli`
+- Frozen porting/integration reference: `agent/portable-core-integration`
 - Frozen smoke/reference branch: `agent/portable-core-smoke`
 
-The integration branch was reconstructed directly from clean `main`; the smoke branch remains a frozen regression/reference laboratory.
+`agent/portable-cli` is intentionally a clean branch from `main`. Its first commit after `main` is a squash baseline containing the verified portable core/session state. The full experimental history remains available on `agent/portable-core-integration`.
 
 ## Smoke lessons carried forward
 
 - avoid giant Borland `String` wrappers without semantic evidence;
-- preserve `__fastcall` ABI on x86;
+- preserve x86 ABI requirements where legacy code depends on them;
 - Borland 1-based `String` semantics are a real runtime hazard;
 - GUI/policy seams should be abstracted, not satisfied by fake VCL;
-- compile representation is useful evidence but is not runtime equivalence.
+- compile representation is evidence, not runtime equivalence;
+- compiler/linker/runtime frontiers should drive the work.
 
 ## Neutral core foundation
 
-The integration branch contains neutral layers for core types, services, image/segment mapping, PE32 loading, analysis helpers, analysis state, instruction navigation and the first decompiler model primitives.
+The current portable layer contains:
 
-The current `AnalysisState` still has a deliberate open fidelity question: neutral range operations allow an exact-end range symmetrically, while original `SetFlags` and `ClearFlags` differ at that boundary.
+- `IdrCoreTypes`
+- `IdrCoreServices`
+- `IdrImageContext`
+- `IdrPeLoader`
+- `IdrAnalysis`
+- `IdrAnalysisState`
+- `IdrInstructionNav`
+- `IdrDecompilerModel`
+- transitional `IdrLegacyCompat`
+- `IdrLegacyBridge`
 
-## Real decoder runtime
+The legacy analysis engine is linked from generated versions of the real translation units rather than reimplemented wholesale.
 
-Run #23 proved generated real `Disasm.cpp` links and executes against the shipped x86 `dis.dll` on a hosted MSVC x86 runner.
+## Whole-legacy integration history
 
-The portable generated transform also resolves the decoder function pointers before invoking `PdisNew(1)`. Original `Disasm.cpp` remains unchanged.
+### #23-31: decoder and Decompiler representation
 
-Run #24 added segment-aware image translation compatible with legacy `SegmentList` semantics, including unbacked `0x80000` segments.
+#23 proved real generated `Disasm.cpp` executes against the shipped x86 `dis.dll` on a hosted MSVC x86 runner.
 
-## Whole-Decompiler transition
+#24 established segment-aware address/offset translation, including the legacy `0x80000` unbacked marker.
 
-After #26 the integration strategy changed from extracted method slices to complete generated legacy translation units.
+By #31 the complete real `Decompiler.cpp` compiled as one generated MSVC x86 TU, excluding only three GUI/presentation-owned methods.
 
-`tests/prepare_portable_decompiler_full.ps1` builds one portable TU from real `Decompiler.cpp`, removing only the GUI-owned definitions:
+### #32-48: linker-driven subsystem integration
 
-- `TDecompileEnv::OutputSourceCodeLine()`
-- `TDecompileEnv::OutputSourceCode()`
-- `TDecompileEnv::DecompileProc()`
+The first whole-Decompiler link attempt exposed 103 unresolved externals. Rather than adding arbitrary stubs, the linker frontier was used as the dependency map.
 
-Run #31 was the first compile-clean complete Decompiler TU.
+The progression was:
 
-## Linker-driven subsystem integration
+`103 -> 89 -> 73 -> 46 -> 37 -> 29 -> 4`
 
-### #32: first full Decompiler link attempt
+During that phase:
 
-Adding `Decompiler.portable.obj` to the integration probe exposed **103 unresolved externals**. This became the dependency map rather than a reason to add arbitrary stubs.
+- complete real `Misc.cpp` was integrated;
+- complete real `KnowledgeBase.cpp` was integrated;
+- complete real `Infos.cpp` was integrated;
+- analysis-facing session/global ownership was extracted from legacy `Main.cpp` into `IdrLegacyBridge`;
+- duplicate generated string helpers were localized rather than generalized.
 
-### #33-40: bridges plus complete real Misc
+### #49-50: portable services and zero unresolved
 
-Small RTL/session bridges reduced the linker frontier while `tests/prepare_portable_misc_full.ps1` was pushed through its compatibility walls.
+The last four seams were connected to real portable/legacy behavior:
 
-By #40 complete real `Misc.cpp` and `Decompiler.cpp` compiled together and the linker frontier was down to 46 unresolved externals plus two duplicate generated string helpers.
+- `ManualInput` -> service callback
+- method lookup -> service callback
+- enumeration formatting -> real legacy helper
+- procedure-size estimation -> metadata/flag/image state
 
-The duplicate `PortableStringPos` / `PortableSubString` definitions were localized to their generated TU rather than creating a broader runtime abstraction.
+Embedded-procedure confirmation was also routed through the service boundary.
 
-### #42-44: complete real KnowledgeBase
+#50 completed successfully with zero unresolved externals and a runnable integrated probe.
 
-`tests/prepare_portable_knowledgebase_full.ps1` integrates real `KnowledgeBase.cpp`.
+## PE32 ingestion
 
-Its first complete compile attempt reached only two missing declarations (`MatchCode`, `SameText`). A later attempt exposed `GetTypeIdxByUID`, an empty legacy function explicitly marked unused; the generated portable TU drops that dead definition instead of inventing a return value.
+### Legacy loader semantics retained
 
-KnowledgeBase then compiled as part of the integrated build and materially reduced the linker dependency set.
+`IdrPeLoader` follows the analysis-facing behavior extracted from `Main.cpp`, not a generic memory-mapped PE abstraction.
 
-### #46-47: complete real Infos
+Important retained behavior:
 
-`tests/prepare_portable_infos_full.ps1` integrates real `Infos.cpp`.
-
-The first pass exposed a narrow declaration/compatibility wall consisting largely of real `Misc` helpers plus one remaining GUI workdir reference and one numeric Borland `String(...)` construction. After those were mapped, #47 compiled all four large legacy units together:
-
-`KnowledgeBase + Infos + Misc + Decompiler`
-
-The linker then reported only 29 unresolved externals, mostly legacy session/global state.
-
-### #48: session/state ownership
-
-`IdrLegacyBridge.cpp` now supplies the real analysis-facing subset formerly owned by `Main.cpp`, including:
-
-- `KnowledgeBase`
-- `Infos`
-- `Flags`
-- image/code size globals
-- segment/type/VMT lists
-- VMT layout globals
-- string buffer state
-- mutable legacy register-name tables
-- class address lookup/cache
-- working directory
-
-`Flags` is a view over the neutral `AnalysisState` instead of an independent fake allocation.
-
-This reduced the unresolved set from 29 to four explicit headless seams.
-
-### #49-50: portable services and linked execution
-
-The four remaining seams were connected to real portable or legacy behavior:
-
-- `ManualInput` -> `IdrCoreServices.manualInput`
-- `PortableGetMethodInfo` -> `IdrCoreServices.lookupMethod`
-- `PortableGetEnumerationString` -> real legacy `GetEnumerationString`
-- `PortableEstimateProcSize` -> metadata first, then neutral flag/image state
-
-Embedded-procedure confirmation was also routed through the same service boundary, and `IdrLegacyBridge` gained a configurable service set with conservative headless defaults.
-
-#49 contained one local bridge defect: `AddressToOffset()` returns an `int` with negative failure codes, but the new code treated it as an optional value. The then-current multi-command `cmd` compile step continued after that `cl` failure and exposed the missing object only at link time.
-
-#50 corrected the offset contract and completed successfully. At that point the integrated core probe had **zero unresolved externals** and executed successfully.
-
-## PE32 ingestion phase
-
-### Legacy semantics extracted from `Main.cpp`
-
-The original loader uses PE32/x86 headers to build an analysis-specific image rather than simply memory-mapping `SizeOfImage`.
-
-Important behavior carried into the neutral loader:
-
-- `ImageBase` and `SizeOfImage` come from the PE optional header;
-- entry point becomes an absolute VA;
-- section start is `ImageBase + VirtualAddress`;
-- for all but the last section, analysis span is the RVA distance to the next section;
-- the last section uses `VirtualSize`;
+- PE32 / x86 validation;
+- absolute entry point from `ImageBase + AddressOfEntryPoint`;
+- section starts from `ImageBase + VirtualAddress`;
+- next-section RVA defines analysis span except for the last section;
+- last section uses `VirtualSize`;
 - zero-raw-data sections are unbacked;
-- resource and relocation sections are intentionally excluded from analysis bytes and represented as unbacked;
-- unbacked segments retain the legacy `0x80000` marker;
-- backed segment spans are packed contiguously into the analysis image and gaps inside those spans are zero-filled;
+- resource and relocation sections are represented as unbacked;
+- unbacked segments carry the legacy `0x80000` flag;
+- backed analysis spans are packed contiguously and zero-filled where raw data is shorter than the analysis span;
 - `CodeBase` is based on the first section;
-- legacy `CodeSize` behavior corresponds to the total packed backed-analysis size.
+- `CodeSize` equals packed backed-analysis size.
 
-This matches the earlier segment-aware `IdrImageContext` model rather than forcing a flat `ImageBase + RVA` byte buffer.
+### #51-53: loader compile/runtime
 
-### #51-53: loader compile and runtime
+#51 and #52 both exposed the Windows SDK `max` macro collision in `IdrPeLoader.cpp`. The workflow had already been hardened so every `cl` invocation fails the step immediately.
 
-`IdrPeLoader` and a dedicated PE loader probe were added after #50.
+#53 fixed the macro collision and completed successfully. The loader probe then verified packed/unbacked section behavior and address/offset translation at runtime.
 
-The probe creates a controlled PE32 image containing `.text`, `.rsrc`, `.data` and `.bss`, allowing deterministic checks of backed and unbacked section behavior without depending on an external binary fixture.
+## Authoritative loaded session
 
-#51 and #52 both stopped in `IdrPeLoader.cpp` because `Windows.h` exposed the legacy `max` macro, colliding with `std::numeric_limits<T>::max()`.
+### #54
 
-The important harness improvement was already active: compile commands now use fail-fast `cl ... || exit /b 1`, so these errors stopped in the compile step rather than surfacing later as missing-object linker noise.
+A loaded PE now drives both neutral and legacy analysis-facing state through one activation API.
 
-#53 at commit:
+`ActivateLegacyLoadedPeSession()` binds:
 
-`a804f7f93e3e59bfddc02f8ef5f5cd25072401f5` — `Avoid Windows max macro in PE32 loader`
+- neutral `ImageContext`
+- `EP`
+- `ImageBase`
+- `ImageSize`
+- `TotalSize`
+- `CodeBase`
+- `CodeSize`
+- legacy `Code` pointer
+- neutral `AnalysisState` and legacy `Flags` view
+- legacy `Infos` pointer storage
 
-completed successfully after making the Windows include/numeric-limits use macro-safe.
+`ResetLegacyLoadedPeSession()` tears that state down again.
 
-Current verified loader path:
+The session probe verifies activation, shared byte storage, flags visibility, infos initialization and reset behavior.
 
-`controlled PE32 file -> IdrPeLoader -> packed bytes + SegmentView list -> ActivateLoadedPeImage -> IdrImageContext -> AddressToOffset / OffsetToAddress`
+## First portable CLI
 
-This is the first runtime-tested real file-ingestion path into the portable core.
+### #57 on the integration branch
 
-## Transitional compatibility surface
+Commit:
 
-`portable/core/IdrLegacyCompat.h` and generated transforms remain transitional bridges, not a claim of a complete Borland RTL implementation.
+`a0d72d9916b9c458ba3098f7a7d17354d536fba0` — `Introduce first portable IDR CLI`
 
-Current reached compatibility includes:
+Run #57 completed successfully.
+
+The host accepts:
+
+`idr-cli.exe <target.exe>`
+
+It:
+
+1. loads a PE32 target through `IdrPeLoader`;
+2. activates the authoritative legacy/neutral session;
+3. verifies both views agree on the loaded image;
+4. prints deterministic PE/session/segment metadata;
+5. resets the session.
+
+CI builds a real MSVC x86 PE32 executable fixture and runs the CLI against that file. This is deliberately different from only testing a synthetic in-memory PE byte array.
+
+## Clean branch transition
+
+After #57 the active work moved away from the long-lived integration branch.
+
+`agent/portable-cli` was created from `main` with:
+
+- parent: `52788d54bedab3f088356e3284bf3105ad57b30b`
+- baseline commit: `7f3f3fe68db55c95a7928bbc86f3bf2580519113` — `Establish portable MSVC x86 core baseline`
+
+The baseline tree is the verified #54 portable core/session tree including these documentation files.
+
+The verified #57 CLI change is then carried as the next logical product commit, while the workflow is retargeted to `agent/portable-cli`.
+
+This keeps the active product history compact while preserving the full #8-#57 evidence trail on the frozen integration branch.
+
+## Current compatibility surface
+
+`portable/core/IdrLegacyCompat.h` and the generator transforms remain transitional bridges, not a complete Borland RTL implementation.
+
+Reached compatibility includes:
 
 - `String = std::string`
-- explicit known numeric `String(expr)` conversions
-- 1-based helper implementations for reached `Pos` / `SubString` calls
-- `.Length()` / `.SetLength()` / `.IsEmpty()` generated transforms
-- `SameText`, `AnsiReplaceText`, numeric/string formatting helpers
+- explicit reached numeric `String(expr)` conversions
+- 1-based helper behavior for reached `Pos` / `SubString` calls
+- generated `.Length()` / `.SetLength()` / `.IsEmpty()` transforms
+- reached string/formatting helpers
 - narrow `Currency`, `Variant` and enumeration paths
-- `TList` / `TStringList` compatibility needed by real metadata code
-- critical-section compatibility needed by real `Infos.cpp`
+- `TList` / `TStringList` compatibility used by metadata code
+- critical-section compatibility used by `Infos.cpp`
 - configurable headless service callbacks.
 
 Do not generalize this surface without runtime evidence.
 
 ## Important semantic hazards still open
 
-### Borland direct String indexing
+### Direct String indexing
 
-Direct legacy expressions such as `name[1]` still have Borland 1-based versus `std::string` 0-based semantics. These must be audited as actual runtime paths are exercised.
+Legacy direct expressions such as `name[1]` can still differ because Borland `String` is 1-based while `std::string` is 0-based. Audit only reached runtime paths rather than applying blind source-wide transforms.
 
 ### Variant / WideString / Currency / Comp
 
-Only reached cases are represented. Binary layout and full conversion/formatting compatibility are not claimed.
+Only reached cases are represented. Full binary-layout and formatting compatibility are not claimed.
+
+### AnalysisState range fidelity
+
+The exact legacy end-boundary asymmetry between `SetFlags` and `ClearFlags` remains an explicit fidelity question.
 
 ### Legacy warnings
 
-Signedness warnings, old CRT calls, suspicious shift-count expressions and not-all-paths-return warnings remain visible. They should be classified by runtime relevance, not globally modernized.
+Signedness, old CRT calls, suspicious shifts and not-all-paths-return warnings remain visible. Classify by runtime relevance instead of globally modernizing them.
 
-### Session ownership is still split
+### Metadata/session lifetime
 
-`ActivateLoadedPeImage()` currently makes `ImageContext` authoritative for bytes/segments, but the legacy analysis-facing globals still need to be initialized from the same loaded image:
+The loaded session now owns flag and infos slot storage, but deeper analysis paths will begin allocating real `InfoRec`/procedure/type metadata. Lifetime and reset behavior must remain authoritative as those paths are enabled.
 
-- entry point;
-- `ImageSize` / `TotalSize`;
-- `CodeBase` / `CodeSize`;
-- neutral `AnalysisState` and legacy `Flags` view;
-- `Infos` pointer storage sized to the packed analysis image.
+## Next technical frontier
 
-Until this is unified, a CLI host would need ad-hoc setup similar to the old probe path.
+The project no longer needs more linker-stub chasing. The next work should make the CLI drive progressively deeper real analysis.
 
-## Next architectural frontier: one authoritative loaded session
+Preferred order:
 
-The preferred sequence after #53 is:
-
-1. introduce explicit activation/deactivation of a loaded PE session;
-2. bind `ImageContext` and all reached legacy image/session globals from the same `LoadedPeImage`;
-3. own/reset `AnalysisState` for the packed image and make `Flags` its legacy view;
-4. own/reset the `Infos` pointer array without inventing metadata records;
-5. extend the loader probe to verify those legacy views and reset behavior;
-6. add a minimal executable host that opens a PE32 target and prints deterministic metadata;
-7. grow that host into `idr-cli.exe <target.exe>` and then execute progressively deeper real analysis paths.
+1. prove decoder initialization from the CLI-loaded session;
+2. decode the target entry point through the real `MDisasm`/`dis.dll` chain;
+3. locate the first safe non-GUI legacy analysis initialization path and invoke it from the host;
+4. inspect resulting `Flags`/`Infos` state;
+5. add controlled Delphi Win32 fixtures and compare outputs with original IDR;
+6. audit runtime-reached Borland RTL semantics;
+7. expose procedures/types/metadata through deterministic CLI output;
+8. publish `idr-cli.exe` as a workflow artifact once it is useful enough to consume outside CI.
 
 ## Working rules
 
 - Compiler/linker/runtime evidence over speculation.
 - One coherent commit per logical change where practical.
-- Do not disturb the frozen smoke branch.
-- Do not push over an active integration run because concurrency cancels the previous run.
-- Preserve original legacy files until a deliberate structural port warrants changing them.
+- Do not disturb frozen reference branches.
+- Do not push over an active `agent/portable-cli` run.
+- Preserve original legacy source unless a deliberate structural port warrants changing it.
 - No upstream PR or merge to `main` yet.

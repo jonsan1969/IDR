@@ -8,7 +8,7 @@ $body = $src.Substring($start, $end - $start)
 # generated smoke copy. Keep this controlled: String(char*) and String(optext)
 # must remain string construction, not become numeric conversion.
 $numericStringArgs = @(
-    '_div', '_mod', '_pow2', '_offset', '_argsNum', '_retBytes',
+    '_div', '_mod', '_pow2', '_offset', '_imm', '_argsNum', '_retBytes',
     '_item.IntValue', '_item1.IntValue', '_item2.IntValue',
     'item.IntValue', 'item1.IntValue', 'item2.IntValue',
     'DisInfo.Immediate', 'DisInfo.Offset', 'DisInfo.Scale',
@@ -21,6 +21,12 @@ foreach ($arg in $numericStringArgs) {
     $escaped = [regex]::Escape($arg)
     $body = $body -replace "(?<![A-Za-z0-9_])String\($escaped\)", "std::to_string($arg)"
 }
+
+# A few original expressions rely on Embarcadero String's implicit numeric
+# conversion without an explicit String(...). Preserve the intended textual
+# value narrowly in the generated smoke copy.
+$body = $body -replace 'CmpInfo\.R = 0;', 'CmpInfo.R = "0";'
+$body = $body -replace 'GetDecompilerRegisterName\(_reg1Idx\) \+ " := " \+ _offset \+ ";"', 'GetDecompilerRegisterName(_reg1Idx) + " := " + std::to_string(_offset) + ";"'
 
 # Map the Embarcadero String methods actually reached by the engine while
 # preserving their 1-based semantics where std::string differs.

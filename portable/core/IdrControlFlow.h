@@ -47,6 +47,12 @@ struct ControlFlowEdge {
     ControlFlowEdgeKind kind = ControlFlowEdgeKind::BranchTaken;
 };
 
+struct CallXref {
+    DWord caller = 0;
+    DWord callSite = 0;
+    DWord callee = 0;
+};
+
 struct BasicBlockTrace {
     DWord address = 0;
     std::vector<TraceInstruction> instructions;
@@ -77,6 +83,7 @@ struct ControlFlowResult {
     std::vector<TraceInstruction> entryTrace;
     std::vector<BasicBlockTrace> entryBlocks;
     std::vector<ControlFlowEdge> edges;
+    std::vector<CallXref> callXrefs;
     std::vector<ProcedureTrace> candidates;
     std::vector<ProcedureSummary> procedures;
     std::size_t discoveredCandidateCount = 0;
@@ -164,10 +171,12 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
                         result.edges.push_back({procedureAddress, address, decoded.target,
                                                 decoded.call ? ControlFlowEdgeKind::Call
                                                              : ControlFlowEdgeKind::BranchTaken});
-                        if (decoded.call)
+                        if (decoded.call) {
+                            result.callXrefs.push_back({procedureAddress, address, decoded.target});
                             enqueueCandidate(decoded.target);
-                        else
+                        } else {
                             enqueueBlock(decoded.target);
+                        }
                     }
                 }
 

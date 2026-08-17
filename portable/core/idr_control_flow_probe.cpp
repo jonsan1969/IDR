@@ -117,6 +117,20 @@ int main() {
         return 3;
     }
 
+    if (result.callXrefs.size() != 3 ||
+        result.callXrefs[0].caller != kBase ||
+        result.callXrefs[0].callSite != kBase ||
+        result.callXrefs[0].callee != kTargetA ||
+        result.callXrefs[1].caller != kTargetA ||
+        result.callXrefs[1].callSite != kTargetA ||
+        result.callXrefs[1].callee != kTargetB ||
+        result.callXrefs[2].caller != kTargetA ||
+        result.callXrefs[2].callSite != kTargetA + 5 ||
+        result.callXrefs[2].callee != kTargetB) {
+        std::cerr << "control-flow probe produced unexpected call xrefs\n";
+        return 4;
+    }
+
     const auto branchOffset = static_cast<std::size_t>(AddressToOffset(kBranchTarget));
     const auto aOffset = static_cast<std::size_t>(AddressToOffset(kTargetA));
     const auto bOffset = static_cast<std::size_t>(AddressToOffset(kTargetB));
@@ -132,7 +146,7 @@ int main() {
         (analysis.Flags()[aOffset] & requiredProcedureFlags) != requiredProcedureFlags ||
         (analysis.Flags()[bOffset] & requiredProcedureFlags) != requiredProcedureFlags) {
         std::cerr << "control-flow probe produced unexpected analysis flags\n";
-        return 4;
+        return 5;
     }
 
     std::cout << "neutral-control-flow=ok\n";
@@ -140,6 +154,7 @@ int main() {
     std::cout << "candidate-count=" << result.candidates.size() << '\n';
     std::cout << "procedure-start-count=" << (result.candidates.size() + 1) << '\n';
     std::cout << "procedure-summary-count=" << result.procedures.size() << '\n';
+    std::cout << "call-xref-count=" << result.callXrefs.size() << '\n';
     std::cout << "edge-count=" << result.edges.size() << '\n';
     std::cout << "call-edge-count=" << callEdges << '\n';
     std::cout << "branch-taken-edge-count=" << branchTakenEdges << '\n';

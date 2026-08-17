@@ -12,6 +12,7 @@ extern MDisasm Disasm;
 extern Byte *Code;
 int __fastcall Adr2Pos(DWord adr);
 bool __fastcall IsFlagSet(DWord flag, int pos);
+int __fastcall BranchGetPrevInstructionType(DWord fromAdr, DWord *jmpAdr, PLoopInfo loopInfo);
 
 '@
 New-Item -ItemType Directory -Force -Path "$PSScriptRoot\generated" | Out-Null

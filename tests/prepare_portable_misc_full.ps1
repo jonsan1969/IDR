@@ -28,8 +28,6 @@ function Remove-CppFunction {
 
 $src = Get-Content -Raw -LiteralPath (Join-Path $root 'Misc.cpp')
 
-# Strip platform/VCL includes. The generated declaration surface from the full
-# Decompiler preparation already supplies the legacy core declarations.
 $src = $src -replace '(?m)^\s*#include\s*<vcl\.h>\s*\r?\n', ''
 $src = $src -replace '(?m)^\s*#include\s*<minwindef\.h>\s*\r?\n', ''
 $src = $src -replace '(?m)^\s*#include\s*<dbghelp\.h>\s*\r?\n', ''
@@ -39,8 +37,6 @@ $src = $src -replace '(?m)^\s*#include\s*"InputDlg\.h"\s*\r?\n', ''
 $src = $src -replace '(?m)^\s*#pragma\s+hdrstop\s*\r?\n', ''
 $src = $src -replace '(?m)^\s*#pragma\s+package\([^\r\n]+\)\s*\r?\n', ''
 
-# These functions are already supplied by the neutral bridge. Remove the real
-# legacy definitions from this generated TU so one link target has one owner.
 $bridgeOwned = @(
     'int __fastcall Adr2Pos(DWord adr)',
     'DWord __fastcall Pos2Adr(int Pos)',
@@ -58,13 +54,8 @@ $bridgeOwned = @(
     'int __fastcall GetNearestUpInstruction(int fromPos)',
     'int __fastcall GetNearestUpInstruction(int fromPos, int toPos)'
 )
-foreach ($signature in $bridgeOwned) {
-    $src = Remove-CppFunction $src $signature
-}
+foreach ($signature in $bridgeOwned) { $src = Remove-CppFunction $src $signature }
 
-# Presentation/UI-only and host utility functions stay outside the portable
-# analysis core. They are not dependencies of TDecompiler and only drag in VCL
-# or unrelated PE/version APIs.
 $guiOwned = @(
     'void __fastcall ScaleForm(TForm *AForm)',
     'void __fastcall Copy2Clipboard(',
@@ -77,28 +68,20 @@ $guiOwned = @(
     'String __fastcall GetModuleVersion(',
     'bool __fastcall IsBplByExport('
 )
-foreach ($signature in $guiOwned) {
-    $src = Remove-CppFunction $src $signature
-}
+foreach ($signature in $guiOwned) { $src = Remove-CppFunction $src $signature }
 
-# Remove the canvas state globals left behind after their GUI functions are
-# stripped. They have no role in the headless analysis core.
 $src = $src -replace '(?m)^\s*TColor\s+SavedPenColor;\s*\r?\n', ''
 $src = $src -replace '(?m)^\s*TColor\s+SavedBrushColor;\s*\r?\n', ''
 $src = $src -replace '(?m)^\s*TColor\s+SavedFontColor;\s*\r?\n', ''
 $src = $src -replace '(?m)^\s*TBrushStyle\s+SavedBrushStyle;\s*\r?\n', ''
 
-# Main-form access becomes explicit headless seams instead of dragging TForm
-# into the analysis TU. The definitions are intentionally left to the next
-# integration layer so the linker keeps these dependencies visible.
 $src = $src -replace 'FMain_11011981->EstimateProcSize\(([^\)]+)\)', 'PortableEstimateProcSize($1)'
 $src = $src -replace 'FMain_11011981->WrkDir', 'PortableWorkDir()'
 
-# Chained temporary .Trim() calls need to be handled before the generic Trim
-# transform below, otherwise String(b).Trim() becomes String(b).PortableTrim().
-$src = $src -replace 'String\(b\)\.Trim\(\)', 'PortableTrim(String(b))'
-
-# Narrow Embarcadero String compatibility transforms for the generated copy.
+# PowerShell -replace is case-insensitive by default. Use -creplace for every
+# transform that targets the legacy type name String so std::to_string is not
+# mistaken for another Borland String construction.
+$src = $src -creplace 'String\(b\)\.Trim\(\)', 'PortableTrim(String(b))'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Pos\(([^\r\n\)]+)\)', 'PortableStringPos($1, $2)'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.SubString\(([^,\r\n]+),\s*([^\)\r\n]+)\)', 'PortableSubString($1, $2, $3)'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Trim\(\)', 'PortableTrim($1)'
@@ -113,21 +96,14 @@ $src = $src -replace '\bTryStrToInt\(', 'PortableTryStrToInt('
 $src = $src -replace '\bCompareText\(', 'PortableCompareText('
 $src = $src -replace '(?<!Portable)\bTrim\(', 'PortableTrim('
 $src = $src -replace 'UpperCase\(Reg32Tab\[([^\]]+)\]\)', 'PortableUpperCase(String(Reg32Tab[$1]))'
-$src = $src -replace 'String\(Idx\s*-\s*31\)', 'std::to_string(Idx - 31)'
-$src = $src -replace 'String\(\(int\)\s*Val\)', 'std::to_string(static_cast<int>(Val))'
-$src = $src -replace 'String\(static_cast<int>\(([^\)]+)\)\)', 'std::to_string(static_cast<int>($1))'
+$src = $src -creplace 'String\(Idx\s*-\s*31\)', 'std::to_string(Idx - 31)'
+$src = $src -creplace 'String\(\(int\)\s*Val\)', 'std::to_string(static_cast<int>(Val))'
+$src = $src -creplace 'String\(static_cast<int>\(([^\)]+)\)\)', 'std::to_string(static_cast<int>($1))'
+$src = $src -creplace 'String\(b\)\.PortableTrim\(\)', 'PortableTrim(String(b))'
 
-# Defensive cleanup for chained Trim forms after the generic replacement.
-$src = $src -replace 'String\(b\)\.PortableTrim\(\)', 'PortableTrim(String(b))'
-
-# The portable bridge represents Variant numerically. The string-Variant path
-# is already handled at the Decompiler seam, so keep this generated Misc copy
-# on its numeric path without inventing a fake Variant class.
 $src = $src -replace 'if \(Val\.Type\(\) == varString\) return VarToStr\(Val\);', ''
 $src = $src -replace 'return VarToStr\(Val\);', 'return std::to_string(static_cast<long long>(Val));'
 $src = $src -replace 'Format\("''%s''", ARRAYOFCONST\(\(\(Char\)Val\)\)\)', 'PortableQuotedChar(Val)'
-
-# std::string::c_str() is const and temporaries may not be modified by strtok.
 $src = $src -replace 'p = AnsiString\(tInfo\.Decl\)\.c_str\(\);', 'String _portableEnumDecl = tInfo.Decl; p = _portableEnumDecl.data();'
 $src = $src -replace 'pDecl = AnsiString\(tInfo\.Decl\)\.c_str\(\);', 'String _portableSetDecl = tInfo.Decl; pDecl = _portableSetDecl.data();'
 
@@ -145,7 +121,6 @@ $prefix = @'
 #define MAXSTRBUFFER 10000
 #endif
 
-// Pure records historically declared in Main.h and used by Misc analysis.
 struct SegmentInfo { DWord Start; DWord Size; DWord Flags; String Name; };
 using PSegmentInfo = SegmentInfo *;
 struct TypeRec { Byte kind; DWord adr; String name; };
@@ -202,9 +177,7 @@ int PortableLastDelimiter(const String &text, const String &delimiters) {
     return pos == String::npos ? 0 : static_cast<int>(pos) + 1;
 }
 String PortableUpperCase(String text) {
-    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::toupper(ch));
-    });
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
     return text;
 }
 int PortableStrToInt(const String &text) {

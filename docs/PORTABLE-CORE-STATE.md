@@ -25,6 +25,7 @@ Integration workflow: `.github/workflows/portable-core-integration.yml`
 - `actions/checkout@v6`
 - concurrency cancellation enabled
 - `docs/**` ignored for push-triggered CI
+- core compile commands are fail-fast (`cl ... || exit /b 1`)
 
 x86 remains intentional because legacy `Disasm.cpp` contains x86 inline assembly and the shipped `dis.dll` is x86.
 
@@ -34,37 +35,35 @@ x86 remains intentional because legacy `Disasm.cpp` contains x86 inline assembly
 
 Compile coverage alone does not establish runtime equivalence, especially for Borland 1-based `String` semantics.
 
-## Current milestone: linked and runnable real analysis core
+## Current milestone: real PE32 ingestion reaches the portable core
 
-Run **#50** succeeded at:
+Run **#53** succeeded at:
 
-`242b4a841baeb93abe3eeb0802df262483c10c43` — `Fix portable proc-size offset handling`
+`a804f7f93e3e59bfddc02f8ef5f5cd25072401f5` — `Avoid Windows max macro in PE32 loader`
 
-The integration workflow now compiles, links and runs one MSVC x86 probe containing the real generated legacy translation units:
+The integration workflow now has two runtime-tested paths:
 
-- `Disasm.cpp`
-- `KnowledgeBase.cpp`
-- `Infos.cpp`
-- `Misc.cpp`
-- `Decompiler.cpp` minus the three GUI-owned presentation/orchestration methods
+1. the complete linked analysis-core probe containing generated real legacy `Disasm + KnowledgeBase + Infos + Misc + Decompiler` together with the neutral portable layers;
+2. a neutral PE32 loader probe that constructs and loads a controlled Win32 PE image with `.text`, `.rsrc`, `.data` and `.bss` sections.
 
-alongside the neutral portable layers:
+The loader preserves the analysis-facing semantics extracted from legacy `Main.cpp`:
 
-- `IdrCoreTypes`
-- `IdrCoreServices`
-- `IdrImageContext`
-- `IdrAnalysis`
-- `IdrAnalysisState`
-- `IdrInstructionNav`
-- `IdrDecompilerModel`
-- transitional `IdrLegacyCompat`
-- `IdrLegacyBridge`
+- PE32 / x86 validation;
+- `ImageBase`, `SizeOfImage` and absolute entry point extraction;
+- section-address ordering and span validation;
+- section span based on the next section RVA, with the last section using `VirtualSize`;
+- raw-less sections treated as unbacked;
+- resource and base-relocation sections treated as unbacked;
+- legacy `0x80000` unbacked segment flag;
+- only backed analysis spans stored in the packed byte image;
+- `CodeBase` based on the first PE section;
+- `CodeSize` equal to packed analysis size.
 
-Verified build/runtime chain:
+Verified loader chain:
 
-`generated real legacy TUs -> MSVC x86 objects -> linked console probe -> process execution`
+`PE32 file -> neutral loader -> packed backed bytes + segment table -> ImageContext -> address/offset translation`
 
-This is the first milestone where the large real analysis dependency chain is not merely compile-represented: it is resolved through the linker and executable on a stock GitHub-hosted runner.
+This moves the portable target beyond hand-constructed image bytes: it now has a real executable-file ingestion boundary.
 
 ## Integration chronology
 
@@ -141,15 +140,29 @@ The remaining seams were connected rather than stubbed away:
 
 #49 exposed a local bridge compile bug in procedure-size offset handling. #50 corrected the `AddressToOffset()` contract and the entire integrated probe compiled, linked and executed successfully.
 
+### #51-53: neutral PE32 loader and runtime probe
+
+The next phase extracted the executable-loading semantics needed by analysis from legacy `Main.cpp` into `IdrPeLoader`.
+
+#51 and #52 both stopped at compile time because `Windows.h` defined the legacy `max` macro and collided with `std::numeric_limits<T>::max()`. The workflow's newly fail-fast compile commands correctly stopped at the real compiler error instead of deferring the symptom to the linker.
+
+#53 made the Windows API include macro-safe and completed successfully. The PE32 loader probe now exercises the packed/unbacked section model at runtime.
+
 ## Current architecture boundary
 
-The portable target now has a real linked legacy analysis engine behind a headless policy/state boundary. It does **not** yet have a real executable-file ingestion path or useful CLI orchestration.
+The portable target now has:
 
-The next architectural boundary is therefore file loading, not more linker chasing.
+- a real linked legacy analysis engine behind a headless policy/state boundary;
+- a neutral x86 PE32 loader with runtime-tested segment packing;
+- one neutral `ImageContext` address/offset model shared by analysis and loader tests.
+
+The remaining gap is that activating a loaded PE currently populates `ImageContext`, while legacy session globals (`ImageSize`, `TotalSize`, `CodeBase`, `CodeSize`, entry point, `Flags`, `Infos`) are not yet initialized from the same authoritative loaded-image/session object.
+
+That is the next boundary to remove before introducing the first useful CLI host.
 
 ## Known semantic risks
 
-Link/runtime success of the probe does not mean full behavioral equivalence.
+Loader/link/runtime success does not mean full behavioral equivalence.
 
 Important open risks:
 
@@ -159,19 +172,21 @@ Important open risks:
 - legacy warnings such as signedness, old CRT functions and suspicious shift counts remain non-blocking until their runtime paths are exercised
 - `TDecompiler::DecompileTry()` and `GetStringArgument()` retain legacy not-all-paths-return warnings
 - headless defaults for interactive services are intentionally conservative; a CLI host must supply policy where meaningful
+- PE import/export/resource analysis beyond the image/segment ingestion boundary is not yet wired to the headless host.
 
-## Immediate next phase: PE ingestion and a useful host boundary
+## Immediate next phase: authoritative loaded session and first host
 
 Do not return to method-slice work or linker-stub chasing.
 
 Next steps:
 
-1. isolate the real executable-loading semantics needed by analysis from the VCL `Main.cpp` path;
-2. add a neutral PE32 loader that owns file bytes and populates `ImageView` / `ImageSegments` correctly;
-3. bridge legacy image/session globals from that neutral loaded-image state instead of ad-hoc probe setup;
-4. add runtime tests for PE address/offset/segment mapping using a controlled Win32 PE sample;
-5. introduce a minimal headless host/CLI entry point capable of opening a target and reporting deterministic metadata before attempting full decompilation;
-6. then execute progressively deeper real analysis/decompiler paths and compare with original IDR on known Delphi Win32 binaries.
+1. bind one loaded PE object to both `ImageContext` and the legacy analysis session globals;
+2. allocate/reset neutral analysis flags for the packed image and expose the legacy `Flags` view through that same state;
+3. initialize the legacy `Infos` pointer array for the packed analysis size without inventing metadata;
+4. runtime-test session activation/deactivation and address translation from a controlled PE32 input;
+5. add a minimal headless executable host that opens a target and reports deterministic PE/core metadata;
+6. evolve that host into `idr-cli.exe <target.exe>`;
+7. then execute progressively deeper real analysis/decompiler paths and compare with original IDR on known Delphi Win32 binaries.
 
 ## Working rules
 

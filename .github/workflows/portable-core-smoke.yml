@@ -6,6 +6,10 @@ on:
       - agent/portable-core-smoke
   workflow_dispatch:
 
+concurrency:
+  group: portable-core-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   msvc-portable-smoke:
     runs-on: windows-latest
@@ -35,4 +39,4 @@ jobs:
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          cl /nologo /std:c++17 /W3 /EHsc /c tests\generated\Disasm.portable.cpp /Fo:Disasm.portable.obj
+          cl /nologo /std:c++17 /W3 /EHsc /I. /c tests\generated\Disasm.portable.cpp /Fo:Disasm.portable.obj

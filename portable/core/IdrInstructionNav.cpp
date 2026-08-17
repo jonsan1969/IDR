@@ -2,7 +2,6 @@
 #include "IdrImageContext.h"
 
 #include <Windows.h>
-#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <cstring>
@@ -39,11 +38,10 @@ bool PrefixEqualsExact(const char *actual, const char *expected) {
     return std::strncmp(actual, expected, length) == 0;
 }
 
-bool DecodeAt(MDisasm &disasm, std::size_t pos, DISINFO &info, int &length) {
+bool DecodeAt(MDisasm &disasm, std::size_t pos, DISINFO &info) {
     const auto address = OffsetToAddress(pos);
     if (!address) return false;
-    length = disasm.Disassemble(*address, &info, nullptr);
-    return length > 0;
+    return disasm.Disassemble(*address, &info, nullptr) > 0;
 }
 } // namespace
 
@@ -93,48 +91,69 @@ int GetNearestUpInstruction(const AnalysisState &state, int fromPos, int toPos, 
     if (count <= 0) return -1;
     if (toPos < 0) toPos = 0;
     for (int pos = PreviousValidPos(state, fromPos); pos >= toPos; --pos) {
-        if (state.IsFlagSet(CodeFlags::Instruction, static_cast<std::size_t>(pos)) && --count == 0) {
-            return pos;
-        }
+        if (state.IsFlagSet(CodeFlags::Instruction, static_cast<std::size_t>(pos)) && --count == 0) return pos;
     }
     return -1;
 }
 
-int GetNearestUpPrefixFs(const AnalysisState &state, int fromPos, MDisasm &disasm) {
+int GetNearestUpPrefixFs(const AnalysisState &state, MDisasm &disasm, int fromPos) {
     for (int pos = PreviousValidPos(state, fromPos); pos >= 0; --pos) {
         const auto index = static_cast<std::size_t>(pos);
         if (state.IsFlagSet(CodeFlags::Instruction, index)) {
             DISINFO info{};
-            int length = 0;
-            if (DecodeAt(disasm, index, info, length) && info.SegPrefix == 4) return pos;
+            if (DecodeAt(disasm, index, info) && info.SegPrefix == 4) return pos;
         }
         if (state.IsFlagSet(CodeFlags::ProcStart, index)) break;
     }
     return -1;
 }
 
-int GetNearestUpInstruction(const AnalysisState &state, int fromPos, const char *mnem, MDisasm &disasm) {
-    for (int pos = PreviousValidPos(state, fromPos); pos >= 0; --pos) {
+int GetNearestUpInstructionMatching(const AnalysisState &state, MDisasm &disasm,
+                                    int fromPos, int toPos, const char *instruction) {
+    if (toPos < 0) toPos = 0;
+    for (int pos = PreviousValidPos(state, fromPos); pos >= toPos; --pos) {
         const auto index = static_cast<std::size_t>(pos);
         if (state.IsFlagSet(CodeFlags::Instruction, index)) {
             DISINFO info{};
-            int length = 0;
-            if (DecodeAt(disasm, index, info, length) && PrefixEqualsInsensitive(info.Mnem, mnem)) return pos;
+            if (DecodeAt(disasm, index, info) && PrefixEqualsInsensitive(info.Mnem, instruction)) return pos;
         }
         if (state.IsFlagSet(CodeFlags::ProcStart, index)) break;
     }
     return -1;
 }
 
-int GetNearestDownInstruction(const AnalysisState &state, int fromPos, const char *mnem, MDisasm &disasm) {
-    if (fromPos < 0) fromPos = 0;
-    for (std::size_t index = static_cast<std::size_t>(fromPos); index < state.Size(); ++index) {
+int GetNearestUpInstructionMatching(const AnalysisState &state, MDisasm &disasm,
+                                    int fromPos, int toPos,
+                                    const char *instruction1, const char *instruction2) {
+    if (toPos < 0) toPos = 0;
+    for (int pos = PreviousValidPos(state, fromPos); pos >= toPos; --pos) {
+        const auto index = static_cast<std::size_t>(pos);
         if (state.IsFlagSet(CodeFlags::Instruction, index)) {
             DISINFO info{};
-            int length = 0;
-            if (DecodeAt(disasm, index, info, length) && PrefixEqualsExact(info.Mnem, mnem)) {
-                return static_cast<int>(index);
-            }
+            if (DecodeAt(disasm, index, info) &&
+                (PrefixEqualsInsensitive(info.Mnem, instruction1) || PrefixEqualsInsensitive(info.Mnem, instruction2))) return pos;
+        }
+        if (state.IsFlagSet(CodeFlags::ProcStart, index)) break;
+    }
+    return -1;
+}
+
+int GetNearestDownInstruction(const AnalysisState &state, MDisasm &disasm, int fromPos) {
+    if (fromPos < -1) fromPos = -1;
+    for (std::size_t index = static_cast<std::size_t>(fromPos + 1); index < state.Size(); ++index) {
+        if (state.IsFlagSet(CodeFlags::Instruction, index)) return static_cast<int>(index);
+        if (state.IsFlagSet(CodeFlags::ProcEnd, index)) break;
+    }
+    return -1;
+}
+
+int GetNearestDownInstructionMatching(const AnalysisState &state, MDisasm &disasm,
+                                      int fromPos, const char *instruction) {
+    if (fromPos < -1) fromPos = -1;
+    for (std::size_t index = static_cast<std::size_t>(fromPos + 1); index < state.Size(); ++index) {
+        if (state.IsFlagSet(CodeFlags::Instruction, index)) {
+            DISINFO info{};
+            if (DecodeAt(disasm, index, info) && PrefixEqualsExact(info.Mnem, instruction)) return static_cast<int>(index);
         }
         if (state.IsFlagSet(CodeFlags::ProcEnd, index)) break;
     }

@@ -74,7 +74,7 @@ using DWord = std::uint32_t;
 using String = std::string;
 ```
 
-`String = std::string` is currently sufficient for the tested code, but this does not prove semantic equivalence for all IDR code. Borland/Embarcadero `String` indexing and Unicode behavior may require a more careful compatibility type later.
+`String = std::string` is currently sufficient for the tested code, but this does not prove semantic equivalence for all IDR code. Borland/Embarcadero `String` indexing, integer conversion and Unicode behavior may require a more careful compatibility type later.
 
 ### `__fastcall`
 
@@ -82,20 +82,17 @@ For current compile smoke tests it is neutralized with a macro under MSVC. Calli
 
 ### `TList`
 
-Current minimal functionality needed by proven-green code:
+Current minimal functionality:
 
 - `Count`
 - `Items[index]`
 - `Add(void *)`
-
-Implemented using `std::vector<void *>` in the test compatibility layer.
-
-The next BJL slice (`CreateBJLSequence`) is expected to need at least:
-
 - `Clear()`
 - `Delete(index)`
 
-Do not add semantics until the slice requiring them is introduced and compiled.
+Implemented using `std::vector<void *>` in the test compatibility layer.
+
+`Clear()` and `Delete()` were added when the branch-analysis slice was expanded into `CreateBJLSequence()`. They are non-owning container operations, matching the current IDR usage where code explicitly deletes pointed-to objects itself.
 
 ### `TStringList`
 
@@ -161,11 +158,11 @@ The source is large (~372 KB) and should not be attacked as one giant port. The 
 
 ### Primary contiguous slice
 
-The primary slice starts at `GetString()` and now runs through the complete `TDecompiler::Init()` implementation.
+The primary slice starts at `GetString()` and runs through the complete `TDecompiler::Init()` implementation.
 
 Run #27 proved that this complete span compiles with MSVC x86 after only minimal compatibility definitions.
 
-This span now includes naming/string helpers, condition helpers, `ITEM` manipulation, namer/loop/environment objects, saved register/FPU context handling, decompiler construction/destruction, flags, integer/FPU/normal stack state, prototype validation, and procedure initialization including calling-convention argument placement and return-value setup.
+This span includes naming/string helpers, condition helpers, `ITEM` manipulation, namer/loop/environment objects, saved register/FPU context handling, decompiler construction/destruction, flags, integer/FPU/normal stack state, prototype validation, and procedure initialization including calling-convention argument placement and return-value setup.
 
 ### Explicit GUI boundary after `Init()`
 
@@ -175,7 +172,7 @@ Do not drag this block into the portable core merely to preserve source contigui
 
 ### Branch-analysis slice
 
-A second slice begins at `TDecompileEnv::GetBJLRange()` and initially stops before `CreateBJLSequence()`.
+A second slice begins at `TDecompileEnv::GetBJLRange()`.
 
 Dependencies identified so far:
 
@@ -187,12 +184,15 @@ Dependencies identified so far:
 - existing `Exception` shim
 - existing `DISINFO`/`MDisasm` definitions
 - global `BranchGetPrevInstructionType(DWord, DWord *, PLoopInfo)`
+- `GetDirectCondition(char)` / `GetInvertCondition(char)` for BJL expression construction
 
-Run #30 reached the branch-analysis compile and failed only because `BranchGetPrevInstructionType()` had not been declared in the isolated slice. The function is declared in `Misc.h`, which itself mixes pure core-analysis APIs with GUI types such as `TForm`, `TCanvas`, and clipboard helpers. The portable slice now declares only this one core API instead of including all of `Misc.h`.
+Run #30 reached this branch-analysis compile and failed only because `BranchGetPrevInstructionType()` had not been declared in the isolated slice. The function is declared in `Misc.h`, which mixes pure core-analysis APIs with GUI types.
 
-This is further evidence that `Misc.h` should eventually be split into core-analysis helpers and UI helpers.
+Run #31 was fully green after declaring only that helper. This proves the complete `GetBJLRange()` implementation compiles under MSVC x86 without pulling in `Misc.h` or VCL.
 
-If the corrected `GetBJLRange()` slice compiles, expand next into `CreateBJLSequence()`, which starts exercising mutation-heavy list behavior and condition-expression construction.
+The slice is now expanded through the complete `CreateBJLSequence()` function. Its demonstrated container needs are `TList::Clear()` and `TList::Delete(index)`, now implemented in the STL-backed shim.
+
+A likely next portability boundary is Borland string integer construction in expressions such as `String(m)`. The current `String = std::string` compile shim is not guaranteed to reproduce that behavior; let the next compiler run establish whether an adapter or source transformation is required.
 
 ## `Main.h`
 
@@ -200,9 +200,9 @@ Major architectural smell: core records/constants and application GUI state coex
 
 ## `Misc.h`
 
-`Misc.h` is now confirmed to have the same mixed-responsibility problem as `Main.h`: it declares pure analysis helpers such as `BranchGetPrevInstructionType()` alongside VCL-facing helpers involving forms, canvases, clipboard operations and dialogs.
+`Misc.h` is confirmed to have the same mixed-responsibility problem as `Main.h`: it declares pure analysis helpers such as `BranchGetPrevInstructionType()` alongside VCL-facing helpers involving forms, canvases, clipboard operations and dialogs.
 
-A future cleanup should split these responsibilities, but only after the smoke tests have mapped enough of the actual dependency graph.
+The #30 -> #31 transition is concrete evidence that the core can depend on the analysis API without importing the UI half of `Misc.h`.
 
 ## `TypeInfo2`
 
@@ -254,7 +254,8 @@ Only milestone runs matter; intermediate runs may be cancelled by concurrency.
 - Run #26: red only because `cfImport`, `ikFloat`, `ikLString`, and `ikRecord` were missing.
 - Run #27: green through the complete `TDecompiler::Init()` implementation.
 - Run #30: red only because the isolated `GetBJLRange()` slice lacked the declaration of global core helper `BranchGetPrevInstructionType()` from `Misc.h`.
-- Next active milestone: retry `GetBJLRange()` with that core helper declaration exposed without including VCL-heavy `Misc.h`.
+- Run #31: green through the complete `GetBJLRange()` implementation.
+- Next active milestone: compile branch-analysis slice through `CreateBJLSequence()` with `TList::Clear()` / `Delete()` and explicit condition-helper declarations.
 
 Do not fetch old workflow logs repeatedly. Use the already documented result unless a later run changes the conclusion. Fetch a failed run log once, analyze the complete failure from that result, and fetch again only for a new run.
 

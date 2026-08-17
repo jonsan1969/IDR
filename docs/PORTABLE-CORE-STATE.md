@@ -45,6 +45,7 @@ Successfully object-compiled on GitHub-hosted MSVC x86:
 - complete one-operand simulator: `SimulateInstr1()`
 - complete two-operand simulator family: `SimulateInstr2RegImm()`, `SimulateInstr2RegReg()`, `SimulateInstr2RegMem()`, `SimulateInstr2MemImm()`, `SimulateInstr2MemReg()` and dispatcher `SimulateInstr2()`
 - complete three-operand simulator: `SimulateInstr3()`
+- complete instruction-stack simulators: `SimulatePush()` + `SimulatePop()`
 
 Original source remains unchanged; portability adaptations are generated under `tests/generated` or expressed as smoke-only compatibility declarations.
 
@@ -95,8 +96,39 @@ The generated smoke copy maps embedded-procedure confirmation to `PortableConfir
 - #80 green: **complete `TDecompiler::SimulateInstr2()` dispatcher**, proving the full two-operand family compile-green.
 - #82 red: first `SimulateInstr3()` compile exposed four instances of the already-known `String(_imm)` numeric construction and no new dependency class.
 - #83 green: **complete `TDecompiler::SimulateInstr3()`**.
+- #84 was a generator-only push/pop run.
+- #85 green: **complete `TDecompiler::SimulatePush()` + `TDecompiler::SimulatePop()`**.
+- #86 was a generator-only float run.
+- #87 red: first integrated `SimulateFloatInstruction()` compile; this began the tail-helper/float compatibility phase rather than proving float support green.
 
-At #83 the major instruction-simulation family `SimulateInstr1` / full `SimulateInstr2` / `SimulateInstr3` is compile-green under hosted MSVC x86.
+At #85 the major integer instruction simulation plus instruction-stack simulation is compile-green under hosted MSVC x86. Float/tail-helper mapping is still being converged.
+
+### Final Decompiler helper coverage audit
+
+A source/header coverage audit was added before beginning structural extraction.
+
+By #98 the prepare/audit step reports **52/52 declared `TDecompiler` methods accounted for by the smoke matrix**. This means the coverage inventory itself is complete; it does **not** mean all 52 compile simultaneously yet.
+
+The final helper aggregation currently includes the previously uncovered helper group:
+
+- `GetArrayFieldOffset()`
+- `GetCycleFrom()`
+- `GetCycleIdx()`
+- `GetCycleTo()`
+- `GetFloatItemFromStack()`
+- `GetInt64ItemFromStack()`
+- `GetMemItem()`
+- `GetStringArgument()`
+
+#98 reached the compile step but failed. The failure exposed two categories:
+
+1. a **harness boundary bug**: `GetArrayFieldOffset()` is formatted with a line break between `__fastcall` and the qualified method name, so the old extractor started too early and duplicated already-proven methods such as `DecompileTry()`, `MarkCaseEnum()` and `GetCycle*()`;
+2. genuine final compatibility dependencies around legacy Delphi/BCB float types/constants/functions, `ikInterface`, helper declarations and additional controlled String/Variant conversions.
+
+The boundary bug was fixed rather than changing IDR source. Smoke compatibility was extended for the real dependency set (`Comp`, `Currency`, `FT_*`, `FloatToStr`, `ikInterface`, `GetArrayIndexes(...)`, and the observed String/Variant boundary).
+
+- #99 is an intermediate compatibility commit/run and may be cancelled by concurrency.
+- #100 (`Fix final Decompiler helper smoke boundaries`, commit `b9bfb56832779c82ddbda3a7c0bf779a5d267211`) is the current authoritative run and was still in progress when this document was updated.
 
 ## Engine GUI/interactivity boundary
 
@@ -122,11 +154,19 @@ Compiler-verified String/RTL differences currently mapped or exposed in generate
 - `AnsiReplaceText()`, `IntToStr`, `IntToHex`, `QuotedStr` exposed as dependencies
 - `AnsiString` temporarily mapped to `std::string`
 - `WideString` has a minimal smoke wrapper
-- `Variant` has a temporary integer-compatible smoke alias
+- `Variant` remains a targeted smoke abstraction; late helper mapping exposed another implicit String/Variant boundary
+- legacy float compatibility now needs explicit smoke representations for `Comp`, `Currency`, `FT_*` and `FloatToStr`
+- `ikInterface` (`0x0F` in original `Main.h`) is now part of the reached neutral kind surface
 
 `String = std::string` remains a compile-smoke approximation, not runtime equivalence. Direct 1-based `String[index]` remains a known semantic hazard and must be addressed before calling the engine runtime-ready.
 
 `TStringList` includes `Strings`, aligned `Objects`, sorted insertion, `IndexOf`, and `IndexOfName`. It is still a targeted compatibility shim, not full VCL semantics.
+
+## Harness lessons
+
+The final helper audit added an important extraction rule: method extraction must key from the qualified method name and locate the actual return-type boundary robustly, because original BCB formatting may split return type / `__fastcall` / method name across lines. Do not assume `"<return> __fastcall TDecompiler::..."` appears on one physical line.
+
+Harness failures and compiler portability failures must remain distinct. #98 produced both, and the duplicate-method diagnostics were caused by extraction boundaries rather than by IDR itself.
 
 ## Architectural boundaries found
 
@@ -146,9 +186,9 @@ Mixes pure analysis helpers with forms/canvas/dialog helpers. Tested engine code
 
 The engine is overwhelmingly analysis code but contains small policy/UI decisions around embedded procedures, virtual-method lookup ownership, and unresolved-call input. These need injected interfaces/policies in a real headless core.
 
-## Current direction after #83
+## Current direction after the 52/52 audit
 
-The large decompiler execution/simulation blocks are now compile-mapped. Next work should identify any remaining independent `Decompiler.cpp` core helpers not yet covered, then transition from isolated object-compile slices toward:
+The Decompiler method inventory is now complete at the coverage level. Immediate work is to get the final aggregated helper slice compiler-green after the #98 compatibility findings. Once that is green, stop expanding the slice matrix and transition to integration:
 
 1. neutral core headers/API extraction,
 2. linkable core translation units,
@@ -157,7 +197,7 @@ The large decompiler execution/simulation blocks are now compile-mapped. Next wo
 5. first linked `idr-cli.exe`,
 6. runtime tests against known Delphi Win32 binaries.
 
-Do not interpret the current green matrix as proof of runtime semantic equivalence.
+Do not interpret 52/52 coverage or the current green matrix as proof of runtime semantic equivalence.
 
 ## Working rules
 

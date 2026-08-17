@@ -101,18 +101,21 @@ int main() {
         result.procedures[0].callEdgeCount != 1 ||
         result.procedures[0].branchTakenEdgeCount != 1 ||
         result.procedures[0].fallThroughEdgeCount != 1 ||
+        result.procedures[0].incomingCallCount != 0 ||
         result.procedures[1].address != kTargetA ||
         result.procedures[1].blockCount != 1 ||
         result.procedures[1].instructionCount != 3 ||
         result.procedures[1].callEdgeCount != 2 ||
         result.procedures[1].branchTakenEdgeCount != 0 ||
         result.procedures[1].fallThroughEdgeCount != 0 ||
+        result.procedures[1].incomingCallCount != 1 ||
         result.procedures[2].address != kTargetB ||
         result.procedures[2].blockCount != 1 ||
         result.procedures[2].instructionCount != 1 ||
         result.procedures[2].callEdgeCount != 0 ||
         result.procedures[2].branchTakenEdgeCount != 0 ||
-        result.procedures[2].fallThroughEdgeCount != 0) {
+        result.procedures[2].fallThroughEdgeCount != 0 ||
+        result.procedures[2].incomingCallCount != 2) {
         std::cerr << "control-flow probe produced unexpected procedure summaries\n";
         return 3;
     }
@@ -155,6 +158,9 @@ int main() {
     std::cout << "procedure-start-count=" << (result.candidates.size() + 1) << '\n';
     std::cout << "procedure-summary-count=" << result.procedures.size() << '\n';
     std::cout << "call-xref-count=" << result.callXrefs.size() << '\n';
+    std::cout << "entry-incoming-call-count=" << result.procedures[0].incomingCallCount << '\n';
+    std::cout << "target-a-incoming-call-count=" << result.procedures[1].incomingCallCount << '\n';
+    std::cout << "target-b-incoming-call-count=" << result.procedures[2].incomingCallCount << '\n';
     std::cout << "edge-count=" << result.edges.size() << '\n';
     std::cout << "call-edge-count=" << callEdges << '\n';
     std::cout << "branch-taken-edge-count=" << branchTakenEdges << '\n';

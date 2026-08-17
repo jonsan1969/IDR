@@ -71,6 +71,7 @@ struct ProcedureSummary {
     std::size_t callEdgeCount = 0;
     std::size_t branchTakenEdgeCount = 0;
     std::size_t fallThroughEdgeCount = 0;
+    std::size_t incomingCallCount = 0;
 };
 
 struct ControlFlowOptions {
@@ -236,6 +237,9 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
                 case ControlFlowEdgeKind::BranchTaken: ++summary.branchTakenEdgeCount; break;
                 case ControlFlowEdgeKind::FallThrough: ++summary.fallThroughEdgeCount; break;
             }
+        }
+        for (const auto &xref : result.callXrefs) {
+            if (xref.callee == address) ++summary.incomingCallCount;
         }
         result.procedures.push_back(summary);
     };

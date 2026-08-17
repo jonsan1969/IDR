@@ -81,11 +81,22 @@ foreach ($signature in $guiOwned) {
     $src = Remove-CppFunction $src $signature
 }
 
+# Remove the canvas state globals left behind after their GUI functions are
+# stripped. They have no role in the headless analysis core.
+$src = $src -replace '(?m)^\s*TColor\s+SavedPenColor;\s*\r?\n', ''
+$src = $src -replace '(?m)^\s*TColor\s+SavedBrushColor;\s*\r?\n', ''
+$src = $src -replace '(?m)^\s*TColor\s+SavedFontColor;\s*\r?\n', ''
+$src = $src -replace '(?m)^\s*TBrushStyle\s+SavedBrushStyle;\s*\r?\n', ''
+
 # Main-form access becomes explicit headless seams instead of dragging TForm
 # into the analysis TU. The definitions are intentionally left to the next
 # integration layer so the linker keeps these dependencies visible.
 $src = $src -replace 'FMain_11011981->EstimateProcSize\(([^\)]+)\)', 'PortableEstimateProcSize($1)'
 $src = $src -replace 'FMain_11011981->WrkDir', 'PortableWorkDir()'
+
+# Chained temporary .Trim() calls need to be handled before the generic Trim
+# transform below, otherwise String(b).Trim() becomes String(b).PortableTrim().
+$src = $src -replace 'String\(b\)\.Trim\(\)', 'PortableTrim(String(b))'
 
 # Narrow Embarcadero String compatibility transforms for the generated copy.
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Pos\(([^\r\n\)]+)\)', 'PortableStringPos($1, $2)'
@@ -104,6 +115,10 @@ $src = $src -replace '(?<!Portable)\bTrim\(', 'PortableTrim('
 $src = $src -replace 'UpperCase\(Reg32Tab\[([^\]]+)\]\)', 'PortableUpperCase(String(Reg32Tab[$1]))'
 $src = $src -replace 'String\(Idx\s*-\s*31\)', 'std::to_string(Idx - 31)'
 $src = $src -replace 'String\(\(int\)\s*Val\)', 'std::to_string(static_cast<int>(Val))'
+$src = $src -replace 'String\(static_cast<int>\(([^\)]+)\)\)', 'std::to_string(static_cast<int>($1))'
+
+# Defensive cleanup for chained Trim forms after the generic replacement.
+$src = $src -replace 'String\(b\)\.PortableTrim\(\)', 'PortableTrim(String(b))'
 
 # The portable bridge represents Variant numerically. The string-Variant path
 # is already handled at the Decompiler seam, so keep this generated Misc copy
@@ -115,9 +130,6 @@ $src = $src -replace 'Format\("''%s''", ARRAYOFCONST\(\(\(Char\)Val\)\)\)', 'Por
 # std::string::c_str() is const and temporaries may not be modified by strtok.
 $src = $src -replace 'p = AnsiString\(tInfo\.Decl\)\.c_str\(\);', 'String _portableEnumDecl = tInfo.Decl; p = _portableEnumDecl.data();'
 $src = $src -replace 'pDecl = AnsiString\(tInfo\.Decl\)\.c_str\(\);', 'String _portableSetDecl = tInfo.Decl; pDecl = _portableSetDecl.data();'
-
-# Chained temporary .Trim() calls are not caught by the simple member regex.
-$src = $src -replace 'String\(b\)\.Trim\(\)', 'PortableTrim(String(b))'
 
 $prefix = @'
 #include <algorithm>

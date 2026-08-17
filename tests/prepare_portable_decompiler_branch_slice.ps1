@@ -1,6 +1,6 @@
 $src = Get-Content -Raw -LiteralPath "$PSScriptRoot\..\Decompiler.cpp"
 $start = $src.IndexOf('bool __fastcall TDecompileEnv::GetBJLRange(')
-$end = $src.IndexOf('String __fastcall TDecompileEnv::PrintBJL()', $start)
+$end = $src.IndexOf('DWord __fastcall TDecompiler::Decompile(', $start)
 if ($start -lt 0 -or $end -lt 0) { throw 'Decompiler branch slice markers not found' }
 $body = $src.Substring($start, $end - $start)
 
@@ -9,6 +9,7 @@ $body = $src.Substring($start, $end - $start)
 # semantics explicitly in the generated portability smoke copy.
 $body = $body -replace 'String\(m \+ 1\)', 'std::to_string(m + 1)'
 $body = $body -replace 'String\(m\)', 'std::to_string(m)'
+$body = $body -replace 'String\(k\)', 'std::to_string(k)'
 
 # Embarcadero String::Length() maps to std::string::size() for the ANSI text
 # semantics exercised by this compile-only BJL slice.
@@ -26,6 +27,7 @@ bool __fastcall IsFlagSet(DWord flag, int pos);
 int __fastcall BranchGetPrevInstructionType(DWord fromAdr, DWord *jmpAdr, PLoopInfo loopInfo);
 String __fastcall GetDirectCondition(char c);
 String __fastcall GetInvertCondition(char c);
+String __fastcall AnsiReplaceText(const String &text, const String &from, const String &to);
 
 '@
 New-Item -ItemType Directory -Force -Path "$PSScriptRoot\generated" | Out-Null

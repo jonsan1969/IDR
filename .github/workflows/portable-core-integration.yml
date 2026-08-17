@@ -32,50 +32,52 @@ jobs:
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrCoreServices.cpp /Fo:IdrCoreServices.obj
-          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrImageContext.cpp /Fo:IdrImageContext.obj
-          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrAnalysis.cpp /Fo:IdrAnalysis.obj
-          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrAnalysisState.cpp /Fo:IdrAnalysisState.obj
-          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrInstructionNav.cpp /Fo:IdrInstructionNav.obj
-          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrDecompilerModel.cpp /Fo:IdrDecompilerModel.obj
-          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrLegacyBridge.cpp /Fo:IdrLegacyBridge.obj
-          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_core_link_probe.cpp /Fo:idr_core_link_probe.obj
-          cl /nologo /std:c++17 /W3 /EHsc /I. /c tests\generated\Disasm.portable.cpp /Fo:Disasm.portable.obj
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrCoreServices.cpp /Fo:IdrCoreServices.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrImageContext.cpp /Fo:IdrImageContext.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrPeLoader.cpp /Fo:IdrPeLoader.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrAnalysis.cpp /Fo:IdrAnalysis.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrAnalysisState.cpp /Fo:IdrAnalysisState.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrInstructionNav.cpp /Fo:IdrInstructionNav.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrDecompilerModel.cpp /Fo:IdrDecompilerModel.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\IdrLegacyBridge.cpp /Fo:IdrLegacyBridge.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_core_link_probe.cpp /Fo:idr_core_link_probe.obj || exit /b 1
+          cl /nologo /std:c++17 /W4 /EHsc /I. /Iportable\core /c portable\core\idr_pe_loader_probe.cpp /Fo:idr_pe_loader_probe.obj || exit /b 1
+          cl /nologo /std:c++17 /W3 /EHsc /I. /c tests\generated\Disasm.portable.cpp /Fo:Disasm.portable.obj || exit /b 1
 
       - name: Compile full legacy KnowledgeBase translation unit
         shell: cmd
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          cl /nologo /std:c++17 /W3 /EHsc /I. /Iportable\core /Itests\generated /c tests\generated\KnowledgeBase.portable.cpp /Fo:KnowledgeBase.portable.obj
+          cl /nologo /std:c++17 /W3 /EHsc /I. /Iportable\core /Itests\generated /c tests\generated\KnowledgeBase.portable.cpp /Fo:KnowledgeBase.portable.obj || exit /b 1
 
       - name: Compile full legacy Infos translation unit
         shell: cmd
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          cl /nologo /std:c++17 /W3 /EHsc /I. /Iportable\core /Itests\generated /c tests\generated\Infos.portable.cpp /Fo:Infos.portable.obj
+          cl /nologo /std:c++17 /W3 /EHsc /I. /Iportable\core /Itests\generated /c tests\generated\Infos.portable.cpp /Fo:Infos.portable.obj || exit /b 1
 
       - name: Compile full legacy Misc translation unit
         shell: cmd
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          cl /nologo /std:c++17 /W3 /EHsc /I. /Iportable\core /Itests\generated /c tests\generated\Misc.portable.cpp /Fo:Misc.portable.obj
+          cl /nologo /std:c++17 /W3 /EHsc /I. /Iportable\core /Itests\generated /c tests\generated\Misc.portable.cpp /Fo:Misc.portable.obj || exit /b 1
 
       - name: Compile full legacy Decompiler translation unit
         shell: cmd
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          cl /nologo /std:c++17 /W3 /EHsc /I. /Iportable\core /Itests\generated /c tests\generated\Decompiler.portable.cpp /Fo:Decompiler.portable.obj
+          cl /nologo /std:c++17 /W3 /EHsc /I. /Iportable\core /Itests\generated /c tests\generated\Decompiler.portable.cpp /Fo:Decompiler.portable.obj || exit /b 1
 
       - name: Link integrated core probe
         shell: cmd
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          link /nologo /subsystem:console /out:idr-core-link-probe.exe IdrCoreServices.obj IdrImageContext.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj IdrDecompilerModel.obj IdrLegacyBridge.obj idr_core_link_probe.obj Disasm.portable.obj KnowledgeBase.portable.obj Infos.portable.obj Misc.portable.obj Decompiler.portable.obj > link-output.txt 2>&1
+          link /nologo /subsystem:console /out:idr-core-link-probe.exe IdrCoreServices.obj IdrImageContext.obj IdrPeLoader.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj IdrDecompilerModel.obj IdrLegacyBridge.obj idr_core_link_probe.obj Disasm.portable.obj KnowledgeBase.portable.obj Infos.portable.obj Misc.portable.obj Decompiler.portable.obj > link-output.txt 2>&1
           if errorlevel 1 (
             for /f "usebackq delims=" %%L in ("link-output.txt") do echo ::error title=MSVC linker::%%L
             type link-output.txt
@@ -86,3 +88,14 @@ jobs:
       - name: Run linked probe
         shell: cmd
         run: .\idr-core-link-probe.exe
+
+      - name: Link PE32 loader probe
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
+          link /nologo /subsystem:console /out:idr-pe-loader-probe.exe IdrImageContext.obj IdrPeLoader.obj idr_pe_loader_probe.obj || exit /b 1
+
+      - name: Run PE32 loader probe
+        shell: cmd
+        run: .\idr-pe-loader-probe.exe

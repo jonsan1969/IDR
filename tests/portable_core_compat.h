@@ -23,14 +23,35 @@ using String = std::string;
 #ifndef cfImport
 #define cfImport 0x00000004
 #endif
+#ifndef cfFrame
+#define cfFrame 0x00000200
+#endif
+#ifndef cfSwitch
+#define cfSwitch 0x00000400
+#endif
+#ifndef cfDSkip
+#define cfDSkip 0x00004000
+#endif
 #ifndef cfPass
 #define cfPass 0x00400000
 #endif
 #ifndef cfLoc
 #define cfLoc 0x00800000
 #endif
+#ifndef cfTry
+#define cfTry 0x01000000
+#endif
+#ifndef cfLoop
+#define cfLoop 0x08000000
+#endif
+#ifndef cfFinallyExit
+#define cfFinallyExit 0x10000000
+#endif
 #ifndef cfSkip
 #define cfSkip 0x40000000
+#endif
+#ifndef ikUnknown
+#define ikUnknown 0x00
 #endif
 #ifndef ikFloat
 #define ikFloat 0x04
@@ -41,14 +62,25 @@ using String = std::string;
 #ifndef ikRecord
 #define ikRecord 0x0E
 #endif
+#ifndef ikConstructor
+#define ikConstructor 0x26
+#endif
+#ifndef ikDestructor
+#define ikDestructor 0x27
+#endif
 #ifndef ikFunc
 #define ikFunc 0x29
 #endif
 
 class Exception : public std::runtime_error {
 public:
-    explicit Exception(const char *message) : std::runtime_error(message) {}
-    explicit Exception(const String &message) : std::runtime_error(message) {}
+    String Message;
+
+    explicit Exception(const char *message)
+        : std::runtime_error(message), Message(message) {}
+
+    explicit Exception(const String &message)
+        : std::runtime_error(message), Message(message) {}
 };
 
 class TList {

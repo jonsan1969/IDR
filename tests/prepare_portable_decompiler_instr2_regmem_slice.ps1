@@ -28,6 +28,7 @@ $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]
 $body = $body -replace '\.Length\(\)', '.size()'
 $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.SetLength\(([^\)\r\n]+)\)', '$1.resize($2)'
 $body = $body -replace 'CmpInfo\.R\s*=\s*0\s*;', 'CmpInfo.R = "0";'
+$body = $body -replace '\+\s*_offset\s*\+\s*";"', '+ std::to_string(_offset) + ";"'
 
 New-Item -ItemType Directory -Force -Path "$PSScriptRoot\generated" | Out-Null
 Set-Content -LiteralPath "$PSScriptRoot\generated\Decompiler.instr2.regmem.slice.cpp" -Value ($prefix + $body) -Encoding utf8

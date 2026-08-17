@@ -1,3 +1,4 @@
+#include "IdrImageContext.h"
 #include "IdrLegacyBridge.h"
 #include "IdrLegacyCompat.h"
 #include "IdrPeLoader.h"
@@ -6,6 +7,7 @@
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <string>
 
 extern MDisasm Disasm;
@@ -16,6 +18,12 @@ void PrintHex(const char *label, idr::core::DWord value) {
     std::cout << label << "=0x"
               << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << value
               << std::dec << std::setfill(' ') << '\n';
+}
+
+void PrintTraceAddress(std::size_t index, idr::core::DWord address) {
+    std::cout << "trace[" << index << "] address=0x"
+              << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << address
+              << std::dec << std::setfill(' ');
 }
 
 } // namespace
@@ -87,6 +95,68 @@ int wmain(int argc, wchar_t **argv) {
     std::cout << "entry-instruction-len=" << entryLength << '\n';
     std::cout << "entry-mnemonic=" << entryInfo.Mnem << '\n';
     std::cout << "entry-disasm=" << entryLine << '\n';
+
+    auto &analysis = idr::core::LegacyAnalysisState();
+    constexpr std::size_t kTraceLimit = 8;
+    idr::core::DWord traceAddress = session.entryPoint;
+    std::size_t traceCount = 0;
+
+    for (; traceCount < kTraceLimit; ++traceCount) {
+        const int offset = idr::core::AddressToOffset(traceAddress);
+        if (offset < 0) break;
+
+        DISINFO info{};
+        char line[1024] = {};
+        const int length = Disasm.Disassemble(traceAddress, &info, line);
+        if (length <= 0 || info.Mnem[0] == '\0') break;
+
+        const auto pos = static_cast<std::size_t>(offset);
+        if (!analysis.SetFlag(idr::core::CodeFlags::Instruction, pos) ||
+            !analysis.SetFlags(idr::core::CodeFlags::Code, pos, static_cast<std::size_t>(length))) {
+            std::cerr << "idr-cli: cannot mark decoded instruction state\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 7;
+        }
+
+        PrintTraceAddress(traceCount, traceAddress);
+        std::cout << " len=" << length
+                  << " mnemonic=" << info.Mnem
+                  << " disasm=" << line << '\n';
+
+        if (info.Ret || (info.Branch && !info.Conditional)) {
+            ++traceCount;
+            break;
+        }
+
+        if (static_cast<unsigned int>(length) >
+            std::numeric_limits<idr::core::DWord>::max() - traceAddress) {
+            ++traceCount;
+            break;
+        }
+        traceAddress += static_cast<idr::core::DWord>(length);
+    }
+
+    if (traceCount == 0) {
+        std::cerr << "idr-cli: entry trace produced no instructions\n";
+        idr::core::ResetLegacyLoadedPeSession();
+        return 8;
+    }
+
+    const int entryOffset = idr::core::AddressToOffset(session.entryPoint);
+    const auto entryFlags = (entryOffset >= 0 && session.flags)
+        ? session.flags[static_cast<std::size_t>(entryOffset)]
+        : 0;
+    const auto requiredEntryFlags = idr::core::CodeFlags::Instruction | idr::core::CodeFlags::Code;
+    if ((entryFlags & requiredEntryFlags) != requiredEntryFlags) {
+        std::cerr << "idr-cli: legacy flags view did not observe entry trace state\n";
+        idr::core::ResetLegacyLoadedPeSession();
+        return 9;
+    }
+
+    std::cout << "trace-count=" << traceCount << '\n';
+    std::cout << "entry-flags=0x"
+              << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << entryFlags
+              << std::dec << std::setfill(' ') << '\n';
     std::cout << "legacy-session=bound\n";
     idr::core::ResetLegacyLoadedPeSession();
     return 0;

@@ -5,12 +5,17 @@ if ($start -lt 0 -or $end -lt 0) { throw 'Decompiler engine slice markers not fo
 $body = $src.Substring($start, $end - $start)
 
 # Preserve observed Embarcadero numeric String construction explicitly in the
-# generated smoke copy. The negative lookbehind is important: an earlier
-# literal replacement also matched the tail of GetImmString(...).
+# generated smoke copy. Keep this controlled: String(char*) and String(optext)
+# must remain string construction, not become numeric conversion.
 $numericStringArgs = @(
     '_div', '_mod', '_pow2', '_offset', '_argsNum', '_retBytes',
     '_item.IntValue', '_item1.IntValue', '_item2.IntValue',
-    'DisInfo.Immediate', 'DisInfo.Offset', 'DisInfo.Scale'
+    'item.IntValue', 'item1.IntValue', 'item2.IntValue',
+    'DisInfo.Immediate', 'DisInfo.Offset', 'DisInfo.Scale',
+    '_disInfo.Immediate', '_disInfo.Offset', '_disInfo.Scale',
+    'intTo - 1', 'intTo + 1',
+    'Env->Stack[varIdxInfo.IdxValue].IntValue',
+    'Env->Stack[cntIdxInfo.IdxValue].IntValue'
 )
 foreach ($arg in $numericStringArgs) {
     $escaped = [regex]::Escape($arg)
@@ -78,15 +83,19 @@ int __fastcall GetNearestUpInstruction(int fromPos);
 int __fastcall GetNearestUpInstruction(int fromPos, int toPos);
 String __fastcall GetDecompilerRegisterName(int idx);
 void __fastcall InitItem(PITEM item);
+void __fastcall AssignItem(PITEM dst, PITEM src);
 String __fastcall GetString(PITEM item, Byte precedence);
 int __fastcall IsIntOver(DWord fromAdr);
 bool __fastcall IsExit(DWord fromAdr);
 bool __fastcall IsValidCodeAdr(DWord adr);
 bool __fastcall IsValidImageAdr(DWord adr);
 bool __fastcall SameText(const String &left, const String &right);
+bool __fastcall IsDefaultName(String name);
 bool __fastcall IsInheritsByProcName(const String &name1, const String &name2);
 String __fastcall ExtractProcName(const String &name);
 String __fastcall ExtractClassName(const String &name);
+String __fastcall ExtractName(const String &name);
+String __fastcall ExtractType(const String &name);
 String __fastcall GetDirectCondition(char c);
 int __fastcall BranchGetPrevInstructionType(DWord fromAdr, DWord *jmpAdr, PLoopInfo loopInfo);
 bool __fastcall IsXorMayBeSkipped(DWord fromAdr);
@@ -106,6 +115,7 @@ int __fastcall IsAbs(DWord fromAdr);
 bool __fastcall IsSameRegister(int idx1, int idx2);
 Byte __fastcall GetTypeKind(String name, int *size);
 int __fastcall GetRecordSize(String name);
+String __fastcall GetRecordFields(int ofs, String type);
 int __fastcall GetArraySize(String type);
 int __fastcall GetArrayElementTypeSize(String type);
 String __fastcall GetArrayElementType(String type);
@@ -123,12 +133,15 @@ String __fastcall GetImmString(int val);
 String __fastcall GetImmString(String typeName, int val);
 String __fastcall TransformString(char *str, int len);
 String __fastcall TransformUString(Word codePage, const wchar_t *data, int len);
-String __fastcall GetEnumerationString(String typeName, DWord val);
+String __fastcall GetEnumerationString(String typeName, Variant val);
 String __fastcall GetSetString(String typeName, Byte *valAdr);
 int __fastcall FloatNameToFloatType(String name);
 String __fastcall MakeGvarName(DWord adr);
+void __fastcall MakeGvar(PInfoRec recN, DWord adr, DWord xrefAdr);
 PInfoRec __fastcall AddToBSSInfos(DWord adr, String name, String typeName);
 int __fastcall GetField(String typeName, int offset, String &name, String &type);
+int __fastcall IsTryBegin(DWord fromAdr, DWord *endAdr);
+int __fastcall IsTryBegin0(DWord fromAdr, DWord *endAdr);
 
 '@
 New-Item -ItemType Directory -Force -Path "$PSScriptRoot\generated" | Out-Null

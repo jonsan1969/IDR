@@ -165,8 +165,10 @@ int wmain(int argc, wchar_t **argv) {
     }
 
     std::size_t candidateInstructionCount = 0;
+    std::size_t candidateBlockCount = 0;
     for (std::size_t i = 0; i < flow.candidates.size(); ++i) {
         const auto &candidate = flow.candidates[i];
+        candidateBlockCount += candidate.blocks.size();
         std::cout << "candidate[" << i << "] address=0x"
                   << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
                   << candidate.address << std::dec << std::setfill(' ') << '\n';
@@ -177,9 +179,11 @@ int wmain(int argc, wchar_t **argv) {
     }
 
     std::cout << "trace-count=" << flow.entryTrace.size() << '\n';
+    std::cout << "entry-block-count=" << flow.entryBlocks.size() << '\n';
     std::cout << "edge-count=" << flow.edges.size() << '\n';
     std::cout << "candidate-count=" << flow.candidates.size() << '\n';
     std::cout << "candidate-discovered-count=" << flow.discoveredCandidateCount << '\n';
+    std::cout << "candidate-block-count=" << candidateBlockCount << '\n';
     std::cout << "candidate-instruction-count=" << candidateInstructionCount << '\n';
     std::cout << "entry-flags=0x"
               << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << entryFlags

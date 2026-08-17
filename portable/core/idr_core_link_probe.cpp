@@ -1,4 +1,5 @@
 #include "IdrAnalysis.h"
+#include "IdrAnalysisState.h"
 #include "IdrCoreServices.h"
 
 #include <Windows.h>
@@ -29,10 +30,27 @@ int main() {
     if (idr::core::TrimTypeName("System.Integer") != "Integer") return 13;
     if (idr::core::TrimTypeName("1..10") != "1..10") return 14;
 
+    idr::core::AnalysisState state(16);
+    if (state.Size() != 16) return 15;
+    if (!state.SetFlag(idr::core::CodeFlags::Instruction, 3)) return 16;
+    if (!state.IsFlagSet(idr::core::CodeFlags::Instruction, 3)) return 17;
+    if (!state.SetFlags(idr::core::CodeFlags::SetA, 5, 3)) return 18;
+    if (!state.IsFlagSet(idr::core::CodeFlags::SetA, 5) ||
+        !state.IsFlagSet(idr::core::CodeFlags::SetA, 6) ||
+        !state.IsFlagSet(idr::core::CodeFlags::SetA, 7)) return 19;
+    if (!state.ClearFlag(idr::core::CodeFlags::SetA, 6)) return 20;
+    if (state.IsFlagSet(idr::core::CodeFlags::SetA, 6)) return 21;
+    if (!state.ClearFlags(idr::core::CodeFlags::SetA, 5, 3)) return 22;
+    if (state.IsFlagSet(idr::core::CodeFlags::SetA, 5) ||
+        state.IsFlagSet(idr::core::CodeFlags::SetA, 7)) return 23;
+    if (state.SetFlag(idr::core::CodeFlags::Code, 16)) return 24;
+    if (state.SetFlags(idr::core::CodeFlags::Code, 15, 2)) return 25;
+
     MDisasm disasm;
     const auto op = disasm.GetOp(const_cast<char *>("mov"));
     std::cout << "portable-core link probe: OP_MOV=" << static_cast<int>(op)
               << ", name=" << idr::core::DefaultProcName(0x401000)
-              << ", type=" << idr::core::TrimTypeName("System.Integer") << '\n';
-    return op == OP_MOV ? 0 : 15;
+              << ", type=" << idr::core::TrimTypeName("System.Integer")
+              << ", flags=" << state.Size() << '\n';
+    return op == OP_MOV ? 0 : 26;
 }

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -43,6 +44,14 @@ public:
     explicit Exception(const String &message) : std::runtime_error(message), Message(message) {}
 };
 
+class TCriticalSection {
+public:
+    void Enter() { mutex_.lock(); }
+    void Leave() { mutex_.unlock(); }
+private:
+    std::recursive_mutex mutex_;
+};
+
 class TList {
 public:
     int Count = 0;
@@ -60,6 +69,13 @@ public:
     void Clear() { Items.clear(); Count = 0; }
     void Delete(int index) {
         Items.erase(Items.begin() + index);
+        Count = static_cast<int>(Items.size());
+    }
+    template <typename Compare>
+    void Sort(Compare compare) {
+        std::sort(Items.begin(), Items.end(), [compare](void *left, void *right) {
+            return compare(left, right) < 0;
+        });
         Count = static_cast<int>(Items.size());
     }
 };

@@ -17,6 +17,16 @@ using String = std::string;
 #define __fastcall
 #endif
 
+// Core analysis flags normally declared in Main.h. Keep only the
+// definitions needed by the portable Decompiler slice here so the test
+// harness does not have to pull in the VCL-heavy Main.h.
+#ifndef cfPass
+#define cfPass 0x00400000
+#endif
+#ifndef cfLoc
+#define cfLoc 0x00800000
+#endif
+
 class Exception : public std::runtime_error {
 public:
     explicit Exception(const char *message) : std::runtime_error(message) {}

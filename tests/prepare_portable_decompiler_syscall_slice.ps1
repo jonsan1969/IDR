@@ -1,7 +1,11 @@
 $src = Get-Content -Raw -LiteralPath "$PSScriptRoot\..\Decompiler.cpp"
-$start = $src.IndexOf('String __fastcall TDecompiler::GetSysCallAlias(')
-$end = $src.IndexOf('bool __fastcall TDecompiler::SimulateCall(', $start)
-if ($start -lt 0 -or $end -lt 0) { throw 'Decompiler syscall slice markers not found' }
+$startName = $src.IndexOf('TDecompiler::GetSysCallAlias(')
+$endName = $src.IndexOf('TDecompiler::SimulateCall(', [Math]::Max($startName, 0))
+$start = if ($startName -ge 0) { $src.LastIndexOf('String __fastcall ', $startName) } else { -1 }
+$end = if ($endName -ge 0) { $src.LastIndexOf('bool __fastcall ', $endName) } else { -1 }
+if ($start -lt 0 -or $end -lt 0 -or $end -le $start) {
+    throw "Decompiler syscall slice markers not found (startName=$startName start=$start endName=$endName end=$end)"
+}
 $body = $src.Substring($start, $end - $start)
 
 # Reuse the already-proven engine prefix so dependency declarations stay in

@@ -6,6 +6,7 @@ using DWord = std::uint32_t;
 
 #include "../Disasm.h"
 
+// First portability probe: compile the existing IDR disassembler interface with MSVC.
 int main() {
     DISINFO info{};
     (void)info;

@@ -2,7 +2,7 @@
 
 Last updated: 2026-08-17
 
-Technical scratchpad for the experimental MSVC/GitHub-hosted portability work.
+Technical journal for the experimental MSVC/GitHub-hosted portability work.
 
 ## Repository / branch
 
@@ -17,188 +17,41 @@ The experiment asks whether the analysis/decompiler core can become compiler-neu
 
 Workflow: `.github/workflows/portable-core-smoke.yml`
 
-Observed hosted environment: Windows Server 2025 / `windows-2025-vs2026`, VS 2026, MSVC x86 through `vswhere.exe` + `vcvars32.bat`.
+Hosted environment observed: Windows Server 2025 / VS2026, MSVC x86 via `vswhere.exe` + `vcvars32.bat`.
 
-Use `actions/checkout@v6`. `docs/**` does not trigger push CI. Stale runs are cancelled through concurrency.
+Use `actions/checkout@v6`; `docs/**` does not trigger push CI; stale runs are cancelled by concurrency.
 
-For a failing run, fetch the job log once and analyze that returned result. Successful runs are verified from run/job/step metadata without fetching logs.
+For a failing run, fetch the job log once and analyze that result. Successful runs are verified from run/job/step metadata without fetching logs.
 
-## Harness files
+## Harness / regression assets
 
-Core compatibility / slices:
+Important files:
 
 - `tests/portable_core_compat.h`
-- `tests/prepare_portable_disasm.ps1`
-- `tests/prepare_portable_decompiler.ps1`
-- `tests/prepare_portable_decompiler_slice.ps1`
-- `tests/prepare_portable_decompiler_branch_slice.ps1`
-- `tests/prepare_portable_decompiler_engine_slice.ps1`
-- `tests/prepare_portable_decompiler_case_slice.ps1`
-- `tests/prepare_portable_decompiler_syscall_slice.ps1`
-- `tests/prepare_portable_decompiler_call_slice.ps1`
-- `tests/prepare_portable_decompiler_cmp_slice.ps1`
-- `tests/prepare_portable_decompiler_instr1_slice.ps1`
-- `tests/prepare_portable_decompiler_instr2_regimm_slice.ps1`
-- `tests/prepare_portable_decompiler_instr2_regreg_slice.ps1`
-- `tests/prepare_portable_decompiler_instr2_regmem_slice.ps1`
-- `tests/prepare_portable_decompiler_instr2_memimm_slice.ps1`
-- `tests/prepare_portable_decompiler_instr2_memreg_slice.ps1`
-- `tests/prepare_portable_decompiler_instr2_dispatch_slice.ps1`
-- `tests/prepare_portable_decompiler_instr3_slice.ps1`
-- `tests/prepare_portable_decompiler_pushpop_slice.ps1`
-- `tests/prepare_portable_decompiler_float_slice.ps1`
+- `tests/prepare_portable_decompiler*.ps1`
 - `tests/audit_portable_decompiler_coverage.ps1`
+- `tests/prepare_portable_disasm.ps1`
 
 Generated transformed files live under `tests/generated` during CI. Original IDR source remains unchanged.
 
-Later slices reuse the generated prefix from `prepare_portable_decompiler_engine_slice.ps1` so the large neutral declaration surface proven by #49 does not drift between harnesses.
+The extended push/pop translation unit became the aggregate proof target for late Decompiler helpers, avoiding a proliferation of nearly identical workflow steps.
 
-`prepare_portable_decompiler_instr3_slice.ps1` and `prepare_portable_decompiler_float_slice.ps1` exist as standalone generators, but the actual workflow compile proof is obtained through the extended dispatcher and push/pop translation units respectively.
+## Decompiler method coverage milestone
 
-## Compatibility layer
+The automated audit compares `TDecompiler::...` implementations in `Decompiler.cpp` against the generated translation units actually compiled by CI.
 
-Temporary aliases include `Byte`, `Word`, `DWord`, `String = std::string`, `AnsiString = std::string`, a minimal `WideString` wrapper, and targeted smoke representations for reached Delphi/BCB types.
+Run **#103** is fully green and establishes:
 
-### Proven String / RTL mismatches
+- source `TDecompiler` methods found: **52**
+- methods represented in compiled slices: **52**
+- coverage audit: **COMPLETE**
+- every compile step in the workflow green
 
-- #33: numeric `String(int)` differs; generated smoke code uses controlled `std::to_string(...)` transforms.
-- #36: `String::Length()` maps to `.size()` for observed cases.
-- #38: `AnsiReplaceText(...)` exposed with a narrow compile-time signature.
-- #42 onward: engine reaches `String::Pos()`, `SubString()`, `SetLength()`, `IntToStr`, `IntToHex`, `QuotedStr`, `AnsiString`, `WideString` and additional controlled numeric `String(...)` forms.
-- #48: final main-engine failures were only numeric/String semantic mismatches.
-- #57: syscall reused the known 1-based `String::Pos()` mapping.
-- #60/#61: call simulation needed controlled numeric conversions including `DisInfo.Offset`.
-- #68: `CmpInfo.R = 0` demonstrated Embarcadero numeric-to-String assignment semantics in `SimulateInstr2RegImm()`; smoke copy uses textual `"0"`.
-- #73: direct `_offset` concatenation into a String expression needed explicit decimal conversion.
-- #82: `SimulateInstr3()` reused the already-known `String(_imm)` numeric construction; no new semantic category appeared.
-- #98: final helper aggregation exposed additional numeric `String(...)` uses and an implicit String/Variant boundary; continue using narrow transforms rather than global constructor rewrites.
+This ends the method-by-method compile-smoke expansion phase. The existing slices should now be retained as regression coverage rather than extended further.
 
-`Pos` and `SubString` helpers preserve Embarcadero's 1-based semantics in generated smoke code. Do not blindly substitute raw `std::string` indexing/find semantics.
+## Final eight methods found by the audit
 
-Direct 1-based `String[index]` usage remains a known runtime-semantic risk even when code compiles. A thin compatibility String type may eventually be cleaner than an indefinitely growing transform set, but defer that decision until the direct-indexing surface is mapped.
-
-### Legacy float surface
-
-The final helper group reaches BCB/Delphi float support that earlier slices only referenced indirectly:
-
-- `Comp`
-- `Currency`
-- `FT_SINGLE`
-- `FT_REAL`
-- `FT_DOUBLE`
-- `FT_COMP`
-- `FT_CURRENCY`
-- `FT_EXTENDED`
-- `FloatToStr(...)`
-
-These are being represented in the smoke compatibility layer only far enough to preserve compile mapping. Runtime representation/formatting equivalence remains future work.
-
-### Core kinds / helper declarations
-
-Late helper mapping also reaches `ikInterface` (`0x0F` in original `Main.h`) and `GetArrayIndexes(...)`. These belong to the neutral analysis surface, not the VCL UI surface.
-
-### Containers
-
-`TList` remains a non-owning vector-backed smoke shim.
-
-`TStringList` supports `Strings`, aligned `Objects`, sorted insertion preserving alignment, `IndexOf`, and `IndexOfName` with `=` as the current name/value separator. This is targeted compatibility, not full VCL semantics.
-
-### `Exception`
-
-Run #40 exposed Borland `Exception::Message`; the shim stores that public string alongside `std::runtime_error`.
-
-## `Disasm.cpp`
-
-Real implementation compiles with MSVC x86 after generated portability transforms. Legacy CRT and inline-x86 warnings remain separate from portability work.
-
-## `Decompiler.cpp` mapping
-
-### Primary / presentation boundary
-
-`GetString()` through complete `TDecompiler::Init()` is green at #27.
-
-Immediately after `Init()`, `OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()` directly use VCL/form presentation behavior and are intentionally excluded from core mapping.
-
-### BJL / branch analysis
-
-`GetBJLRange()` through complete `PrintBJL()` is stable green at #38.
-
-### Main engine
-
-Complete `TDecompiler::Decompile()` is green at #49 after runs #40/#42/#44/#46/#48 progressively mapped hidden declarations/constants, String semantics and small GUI/policy seams.
-
-Important harness lesson from #44: textual transforms must use guarded/controlled argument matching. An earlier broad replacement corrupted `GetImmString(...)` into `GetImmstd::to_string`; the generator was fixed rather than changing source.
-
-### Case enum
-
-Complete `TDecompiler::DecompileCaseEnum()` is green at #51. Numeric case-label construction is mapped narrowly to `std::to_string(...)`.
-
-### Syscall
-
-`GetSysCallAlias()` + complete `SimulateSysCall()` are green at #58.
-
-#53-#56 were harness-only boundary/marker failures. #57 was the first actual compile and exposed only `GetTypeName(DWord)`, `FT_EXTENDED`, and known `String::Pos()` behavior.
-
-### Call simulation
-
-The slice covers `SimulateInherited()` plus complete `SimulateCall()`.
-
-- #60: first compiler result exposed direct form/VCL seams and one numeric String case.
-- #61: only `String(DisInfo.Offset)` remained.
-- #62: complete call-simulation slice green.
-
-Embedded procedure UI is mapped in smoke code to `PortableConfirmEmbeddedProcedure(...)`; form-owned `GetMethodInfo` is mapped to `PortableGetMethodInfo(...)`. `ManualInput(...)` is still a future CLI resolver/policy seam.
-
-### Comparison reconstruction
-
-Complete `TDecompiler::GetCmpInfo()` is green at #64.
-
-### Instruction simulation
-
-#### One operand
-
-- #66: complete `SimulateInstr1()` green.
-
-#### Two operands
-
-- #68: first `SimulateInstr2RegImm()` compile exposed only two numeric-zero String assignments.
-- #69: `SimulateInstr2RegImm()` green.
-- #71: `SimulateInstr2RegReg()` green.
-- #73: `SimulateInstr2RegMem()` exposed one direct integer/String concatenation.
-- #74: `SimulateInstr2RegMem()` green.
-- #76: `SimulateInstr2MemImm()` green.
-- #78: `SimulateInstr2MemReg()` green.
-- #79: generator-only green run; dispatcher not yet present in workflow steps.
-- #80: complete `SimulateInstr2()` dispatcher green.
-
-Therefore the full two-operand family is object-compile green under hosted MSVC x86.
-
-#### Three operands
-
-- #82: first `SimulateInstr3()` compile failed on four occurrences of `String(_imm)` only; no new core or GUI dependency class.
-- #83: complete `SimulateInstr3()` green.
-
-#### Push / pop
-
-- #84: generator-only intermediate run.
-- #85: complete `SimulatePush()` + `SimulatePop()` green.
-
-This is distinct from the earlier generic `TDecompiler::Push(PITEM)` / `Pop()` stack helpers already present in the primary slice.
-
-#### Float instruction path
-
-- #86: standalone float generator intermediate run.
-- #87: first integrated `SimulateFloatInstruction()` compile was red. This showed that the next phase was no longer the basic integer instruction family but the float/tail-helper compatibility surface.
-
-Do not record #87 as a float-success milestone.
-
-## Final method coverage audit
-
-Before reorganizing source, a method-level audit was added to compare declared `TDecompiler` methods against the generated smoke coverage.
-
-By #98, the prepare/audit step reports **52/52 methods accounted for**. Coverage accounting is therefore complete at the declaration/mapping level.
-
-The final previously uncovered helper group is:
+#97 first reported 44/52 represented and identified exactly eight gaps:
 
 - `GetArrayFieldOffset()`
 - `GetCycleFrom()`
@@ -209,76 +62,169 @@ The final previously uncovered helper group is:
 - `GetMemItem()`
 - `GetStringArgument()`
 
-The extended push/pop slice is currently used as the aggregate translation unit for this final helper proof. This avoids adding a long sequence of nearly identical workflow prepare/compile pairs while the mapping is converging.
+They are all included and compile-green by #103.
 
-### #98 findings
+## Late-run chronology
 
-#98 passed `Prepare Decompiler push-pop slice`, including the 52/52 coverage audit, then failed `Compile Decompiler push-pop slice`.
+### Float / format / case / try / conditions
 
-A major portion of the diagnostics was **not an IDR portability problem**. `GetArrayFieldOffset()` is formatted as:
+- #85 green: complete `SimulatePush()` + `SimulatePop()`.
+- #86: generator-only float intermediate.
+- #87 red: first integrated `SimulateFloatInstruction()` compile exposed BCB `True` and missing `GetGvarName` declaration.
+- #88 green: complete `SimulateFloatInstruction()`.
+- #89 green: complete `SimulateFormatCall()`.
+- #90 green: `MarkCaseEnum()` + `MarkGeneralCase()`.
+- #91 red: complete `DecompileGeneralCase()` exposed numeric `String(_N)`, `String(_N1)`, `String(_N1-_N2)`, `String(_N1-1)` semantics.
+- #92 green: complete `DecompileGeneralCase()`.
+- #93 green: explicit `DecompileTry()` special-slice coverage.
+- #94 red: `AnalyzeConditions()` needed `GetInvertCondition(char)` declaration.
+- #95 green: complete `AnalyzeConditions()`.
+
+`DecompileTry()` still emits MSVC C4715 (not all control paths return a value). Preserve this as a known source-level semantic warning; do not silently alter original behavior during smoke mapping.
+
+### Coverage and final helpers
+
+- #97 red: audit added; 44/52 represented; eight missing helpers named.
+- #98 red: prepare/audit reached **52/52 COMPLETE**, then final-helper compilation failed.
+- #100 red: 52/52 remained complete while compatibility failures narrowed.
+- #101 red: `GetClassSize` and earlier float/helper dependencies were removed from the failure set.
+- #102 red: `Currency` was resolved; remaining errors were BCB numeric `String(int)` constructions.
+- #103 green: deterministic exact numeric mapping closed the final compile failures.
+
+## #98 extraction bug
+
+`GetArrayFieldOffset()` uses this formatting:
 
 ```cpp
 int __fastcall
 TDecompiler::GetArrayFieldOffset(...)
 ```
 
-The extractor expected `int __fastcall ` immediately before the qualified name. Its `LastIndexOf(...)` therefore selected an earlier function boundary and appended a large extra source range. That caused false duplicate-body errors for already-proven methods such as `DecompileTry()`, `MarkCaseEnum()` and `GetCycle*()`.
+The first special extractor assumed the qualified method name followed `int __fastcall ` on the same physical line. `LastIndexOf(...)` therefore selected an earlier boundary and accidentally appended a large source range. False duplicate-body diagnostics followed for already-covered methods such as `DecompileTry()`, `MarkCaseEnum()` and `GetCycle*()`.
 
-Lesson: method slicing must tolerate BCB formatting where return type, calling convention and qualified method name span physical lines. Locate the method name first and derive a robust declaration boundary; do not assume one-line signatures.
+This was a harness defect, not an IDR portability failure. The extractor was corrected to tolerate the split declaration.
 
-After separating the harness artifacts, the real #98 compatibility classes were:
+General rule: find the qualified method name first and derive a robust declaration boundary; never assume BCB formatting keeps return type, calling convention and method name on one line.
 
-- numeric `String(...)` constructions in newly reached code;
-- legacy float types/constants/functions (`Comp`, `Currency`, `FT_*`, `FloatToStr`);
-- `ikInterface`;
-- `GetArrayIndexes(...)`;
-- an observed implicit String-to-Variant call boundary.
+## Final numeric String mapping lesson
 
-The fix strategy remains the same as earlier phases: extend smoke declarations/transforms narrowly and leave original `Decompiler.cpp` untouched.
+The late helper code contains BCB constructions such as:
 
-### #99 / #100
+```cpp
+String(DisInfo.Immediate)
+String(_offset)
+String(-_offset)
+String(_offset + 1)
+String(_offset - _foffset)
+String(_k)
+String(-_k)
+```
 
-- #99 (`Add legacy float and interface smoke types`, commit `a66fab73466e85cfc46af236811b5579f3c6b6cc`) is an intermediate run and is subject to concurrency cancellation.
-- #100 (`Fix final Decompiler helper smoke boundaries`, commit `b9bfb56832779c82ddbda3a7c0bf779a5d267211`) combines the corrected extraction boundary with the current final-helper shims and is the authoritative run. It was still in progress when these notes were written.
+A global `String(...)` rewrite is unsafe because legitimate pointer/string constructors also exist. Earlier regex-based narrow mapping became hard to reason about for exact expressions.
+
+#103 switched the known numeric-expression table to deterministic literal operations of the form:
+
+```powershell
+$body = $body.Replace("String($arg)", "std::to_string($arg)")
+```
+
+with a small explicit set of arithmetic expressions handled separately. This is intentionally compile-smoke-specific and avoids touching legitimate `String(char*)` forms.
+
+## Compatibility layer status
+
+Temporary aliases/representations include `Byte`, `Word`, `DWord`, `String = std::string`, `AnsiString = std::string`, minimal `WideString`, and targeted smoke types for reached Delphi/BCB constructs.
+
+### Compiler-verified String / RTL differences
+
+- numeric `String(int)` needs explicit decimal conversion
+- numeric zero assigned to `String` needs explicit textual representation
+- `.Length()` differs from `std::string::size()`
+- `Pos()` and `SubString()` require preservation of Delphi/BCB 1-based semantics
+- `SetLength()` is mapped to `resize()` only for observed compile-smoke use
+- `AnsiReplaceText`, `IntToStr`, `IntToHex`, `QuotedStr` are explicit dependencies
+- direct integer/String concatenation must be made explicit
+
+Direct 1-based `String[index]` remains a major runtime-semantic risk despite compile success. Examples in original code include checks such as `_name[1]` and `_retType[1]`.
+
+### Legacy float / Variant surface
+
+Late helper mapping reaches:
+
+- `Comp`
+- `Currency`
+- `FT_SINGLE`, `FT_REAL`, `FT_DOUBLE`, `FT_COMP`, `FT_CURRENCY`, `FT_EXTENDED`
+- `FloatToStr(...)`
+- an implicit String/Variant boundary
+
+These are represented only far enough for compile mapping. Runtime representation and formatting equivalence remain future work.
+
+### Core kinds / helper declarations
+
+Late mapping also reaches `ikInterface` (`0x0F` in original `Main.h`), `GetArrayIndexes(...)`, and `GetClassSize(...)`. These belong to the neutral analysis surface rather than VCL UI.
+
+## Established compile milestones
+
+- #27: `TDecompiler::Init()`
+- #38: BJL path through `PrintBJL()`
+- #49: complete `TDecompiler::Decompile()`
+- #51: `DecompileCaseEnum()`
+- #58: syscall path
+- #62: call simulation
+- #64: `GetCmpInfo()`
+- #66: `SimulateInstr1()`
+- #69/#71/#74/#76/#78/#80: complete two-operand family and dispatcher
+- #83: `SimulateInstr3()`
+- #85: `SimulatePush()` + `SimulatePop()`
+- #88: `SimulateFloatInstruction()`
+- #89: `SimulateFormatCall()`
+- #90: case markers
+- #92: `DecompileGeneralCase()`
+- #93: explicit `DecompileTry()` coverage
+- #95: `AnalyzeConditions()`
+- #103: **complete 52/52 Decompiler compile-smoke matrix green**
+
+## GUI / policy seams discovered
+
+Do not fake VCL to keep the compiler happy. The smoke harness exposes these as boundaries instead:
+
+- embedded-procedure confirmation -> future core policy/callback
+- form-owned virtual-method lookup (`FMain_11011981->GetMethodInfo`) -> future analysis service/context
+- `ManualInput(...)` -> future resolver callback or deterministic CLI policy
+
+Presentation functions `OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()` remain intentionally outside the headless core.
 
 ## Mixed-responsibility headers
 
 ### `Main.h`
 
-Core flags/kinds and GUI form state coexist. The tested engine surface strongly justifies neutral `CoreTypes.h` / `IdrTypes.h` extraction.
+Core records/constants coexist with VCL form state. Extract neutral core definitions into `IdrTypes.h` / `CoreTypes.h`.
 
 ### `Misc.h`
 
-Pure analysis APIs coexist with forms/canvas/dialog helpers. A separate neutral analysis API header is increasingly justified.
+Pure analysis APIs coexist with canvas/forms/dialog helpers. Split neutral analysis declarations away from the UI half.
 
-### Form-owned analysis helpers
+## Next technical phase: integration, not more slices
 
-At least `GetMethodInfo` is analysis logic currently owned by `TFMain_11011981`. It should move behind a core service/context rather than remain on a form class.
+The next work should establish a real portable core target:
 
-## Next technical phase after the 52/52 audit
+1. extract neutral core declarations/types from `Main.h` and `Misc.h`;
+2. build real core translation units rather than generated method aggregates;
+3. link those objects and let linker failures expose the true dependency/service boundary;
+4. replace compile-only String/RTL assumptions with runtime-correct semantics;
+5. expose headless binary loading / analysis entry points;
+6. produce first linked `idr-cli.exe`;
+7. run against known Delphi Win32 binaries and compare useful output with the original IDR behavior.
 
-First finish compiler convergence of the final aggregated helper slice. Once all accounted-for `TDecompiler` methods compile under the smoke environment, stop broadening method coverage and move to integration:
-
-1. extract neutral core declarations/types from `Main.h` / `Misc.h`,
-2. make real core translation units compile together without generated source surgery where practical,
-3. link the portable objects and resolve duplicate/missing extern surfaces,
-4. handle Delphi String semantics that compile smoke cannot validate, especially direct 1-based indexing,
-5. expose a headless binary-loading/analysis entry point,
-6. build first `idr-cli.exe`,
-7. add runtime tests using known Delphi Win32 binaries.
-
-Compile-green and 52/52 mapped coverage are not runtime semantic equivalence.
+The 52/52 slice matrix remains CI regression coverage while this structural work proceeds.
 
 ## Working rules
 
-- Preserve original source during dependency mapping.
-- Let concrete compiler errors drive shims/transforms.
-- Avoid wholesale String/container rewrites until semantics are mapped.
-- Do not fake VCL to make smoke compile; identify policy/callback boundaries.
-- Keep functional portability separate from cleanup/security modernization.
+- Preserve original source unless a structural portable-core change is intentional and documented.
+- Let compiler, linker and runtime evidence drive compatibility changes.
+- Keep harness defects distinct from source portability defects.
+- Avoid broad String/container rewrites without semantic evidence.
 - Stay x86 first.
 - No merge to `main` or upstream PR yet.
-- Treat harness/extraction defects separately from source portability defects.
 
 ## First useful deliverable
 

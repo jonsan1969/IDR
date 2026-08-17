@@ -4,11 +4,13 @@
 #include "IdrPeLoader.h"
 #include "../../Disasm.h"
 
+#include <deque>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <string>
+#include <unordered_set>
 
 extern MDisasm Disasm;
 
@@ -113,11 +115,22 @@ int wmain(int argc, wchar_t **argv) {
 
     auto &analysis = idr::core::LegacyAnalysisState();
     constexpr std::size_t kTraceLimit = 8;
+    constexpr std::size_t kCandidateLimit = 8;
     idr::core::DWord traceAddress = session.entryPoint;
     std::size_t traceCount = 0;
     std::size_t edgeCount = 0;
-    idr::core::DWord procedureCandidate = 0;
-    int procedureCandidateOffset = -1;
+    std::size_t discoveredCandidateCount = 0;
+    std::deque<idr::core::DWord> candidateQueue;
+    std::unordered_set<idr::core::DWord> seenCandidates;
+    seenCandidates.insert(session.entryPoint);
+
+    const auto enqueueCandidate = [&](idr::core::DWord address) {
+        if (discoveredCandidateCount >= kCandidateLimit) return;
+        if (idr::core::AddressToOffset(address) < 0) return;
+        if (!seenCandidates.insert(address).second) return;
+        candidateQueue.push_back(address);
+        ++discoveredCandidateCount;
+    };
 
     for (; traceCount < kTraceLimit; ++traceCount) {
         const int offset = idr::core::AddressToOffset(traceAddress);
@@ -159,10 +172,7 @@ int wmain(int argc, wchar_t **argv) {
                 PrintEdge(edgeCount, info.Call ? "call" : "branch",
                           traceAddress, info.Immediate);
                 ++edgeCount;
-                if (info.Call && procedureCandidateOffset < 0) {
-                    procedureCandidate = info.Immediate;
-                    procedureCandidateOffset = targetOffset;
-                }
+                if (info.Call) enqueueCandidate(info.Immediate);
             }
         }
 
@@ -209,10 +219,20 @@ int wmain(int argc, wchar_t **argv) {
         }
     }
 
-    std::size_t candidateTraceCount = 0;
-    if (procedureCandidateOffset >= 0) {
-        PrintHex("procedure-candidate", procedureCandidate);
+    std::size_t candidateCount = 0;
+    std::size_t candidateInstructionCount = 0;
+    while (!candidateQueue.empty() && candidateCount < kCandidateLimit) {
+        const auto procedureCandidate = candidateQueue.front();
+        candidateQueue.pop_front();
+        const int procedureCandidateOffset = idr::core::AddressToOffset(procedureCandidate);
+        if (procedureCandidateOffset < 0) continue;
+
+        std::cout << "candidate[" << candidateCount << "] address=0x"
+                  << std::uppercase << std::hex << std::setw(8) << std::setfill('0')
+                  << procedureCandidate << std::dec << std::setfill(' ') << '\n';
+
         idr::core::DWord candidateAddress = procedureCandidate;
+        std::size_t candidateTraceCount = 0;
         for (; candidateTraceCount < kTraceLimit; ++candidateTraceCount) {
             const int offset = idr::core::AddressToOffset(candidateAddress);
             if (offset < 0) break;
@@ -229,11 +249,36 @@ int wmain(int argc, wchar_t **argv) {
                 idr::core::ResetLegacyLoadedPeSession();
                 return 13;
             }
+            if (info.Call && !analysis.SetFlag(idr::core::CodeFlags::Call, pos)) {
+                std::cerr << "idr-cli: cannot mark candidate call instruction state\n";
+                idr::core::ResetLegacyLoadedPeSession();
+                return 14;
+            }
 
-            PrintTraceAddress("candidate-trace", candidateTraceCount, candidateAddress);
-            std::cout << " len=" << length
+            std::cout << "candidate-trace[" << candidateCount << ":" << candidateTraceCount
+                      << "] address=0x" << std::uppercase << std::hex
+                      << std::setw(8) << std::setfill('0') << candidateAddress
+                      << std::dec << std::setfill(' ')
+                      << " len=" << length
                       << " mnemonic=" << info.Mnem
                       << " disasm=" << line << '\n';
+            ++candidateInstructionCount;
+
+            if ((info.Call || info.Branch) && info.Immediate != 0) {
+                const int targetOffset = idr::core::AddressToOffset(info.Immediate);
+                if (targetOffset >= 0) {
+                    if (!analysis.SetFlag(idr::core::CodeFlags::Loc,
+                                          static_cast<std::size_t>(targetOffset))) {
+                        std::cerr << "idr-cli: cannot mark candidate control-flow target state\n";
+                        idr::core::ResetLegacyLoadedPeSession();
+                        return 15;
+                    }
+                    PrintEdge(edgeCount, info.Call ? "call" : "branch",
+                              candidateAddress, info.Immediate);
+                    ++edgeCount;
+                    if (info.Call) enqueueCandidate(info.Immediate);
+                }
+            }
 
             if (info.Ret || (info.Branch && !info.Conditional)) {
                 ++candidateTraceCount;
@@ -251,7 +296,7 @@ int wmain(int argc, wchar_t **argv) {
         if (candidateTraceCount == 0) {
             std::cerr << "idr-cli: procedure candidate trace produced no instructions\n";
             idr::core::ResetLegacyLoadedPeSession();
-            return 14;
+            return 16;
         }
 
         const auto candidateFlags = session.flags
@@ -263,13 +308,17 @@ int wmain(int argc, wchar_t **argv) {
         if ((candidateFlags & requiredCandidateFlags) != requiredCandidateFlags) {
             std::cerr << "idr-cli: legacy flags view did not observe procedure candidate state\n";
             idr::core::ResetLegacyLoadedPeSession();
-            return 15;
+            return 17;
         }
+
+        ++candidateCount;
     }
 
     std::cout << "trace-count=" << traceCount << '\n';
     std::cout << "edge-count=" << edgeCount << '\n';
-    std::cout << "candidate-trace-count=" << candidateTraceCount << '\n';
+    std::cout << "candidate-count=" << candidateCount << '\n';
+    std::cout << "candidate-discovered-count=" << discoveredCandidateCount << '\n';
+    std::cout << "candidate-instruction-count=" << candidateInstructionCount << '\n';
     std::cout << "entry-flags=0x"
               << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << entryFlags
               << std::dec << std::setfill(' ') << '\n';

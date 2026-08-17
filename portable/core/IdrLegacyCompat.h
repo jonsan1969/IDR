@@ -20,6 +20,7 @@ using String = std::string;
 using AnsiString = std::string;
 using Variant = std::int64_t;
 using Comp = std::int64_t;
+using Char = char;
 using TColor = unsigned long;
 using TObject = void;
 
@@ -51,6 +52,10 @@ public:
         Items.push_back(item);
         Count = static_cast<int>(Items.size());
         return Count - 1;
+    }
+    void Insert(int index, void *item) {
+        Items.insert(Items.begin() + index, item);
+        Count = static_cast<int>(Items.size());
     }
     void Clear() { Items.clear(); Count = 0; }
     void Delete(int index) {

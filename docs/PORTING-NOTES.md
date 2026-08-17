@@ -159,9 +159,13 @@ Complete `TDecompiler::DecompileCaseEnum()` compiles successfully under hosted M
 
 ### Syscall slice
 
-A fifth independent slice now covers `GetSysCallAlias()` plus complete `SimulateSysCall()`, ending before `SimulateCall()`.
+A fifth independent slice covers `GetSysCallAlias()` plus complete `SimulateSysCall()`, ending immediately before `SimulateInherited()`.
 
 The generator reuses the already-proven engine prefix/declarations and applies only the String transforms already justified by previous compiler results. This keeps syscall-specific failures attributable to that block rather than to duplicated harness state.
+
+#### Runs #53 and #54 — harness only
+
+Neither run reached syscall compilation. #53 failed because the initial slice markers were too strict. #54 found the start correctly but revealed that `SimulateCall()` is not the immediate next function after `SimulateSysCall()`. The correct source boundary is `SimulateInherited()`, and the generator was updated accordingly. These runs are harness failures, not IDR/MSVC portability findings.
 
 ## Mixed-responsibility headers
 

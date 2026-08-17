@@ -78,9 +78,6 @@ $src = $src -replace '(?m)^\s*TBrushStyle\s+SavedBrushStyle;\s*\r?\n', ''
 $src = $src -replace 'FMain_11011981->EstimateProcSize\(([^\)]+)\)', 'PortableEstimateProcSize($1)'
 $src = $src -replace 'FMain_11011981->WrkDir', 'PortableWorkDir()'
 
-# PowerShell -replace is case-insensitive by default. Use -creplace for every
-# transform that targets the legacy type name String so std::to_string is not
-# mistaken for another Borland String construction.
 $src = $src -creplace 'String\(b\)\.Trim\(\)', 'PortableTrim(String(b))'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Pos\(([^\r\n\)]+)\)', 'PortableStringPos($1, $2)'
 $src = $src -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.SubString\(([^,\r\n]+),\s*([^\)\r\n]+)\)', 'PortableSubString($1, $2, $3)'
@@ -156,11 +153,11 @@ String __fastcall QuotedStr(const String &value);
 int PortableEstimateProcSize(DWord address);
 String PortableWorkDir();
 
-int PortableStringPos(const String &text, const String &needle) {
+static int PortableStringPos(const String &text, const String &needle) {
     const auto pos = text.find(needle);
     return pos == String::npos ? 0 : static_cast<int>(pos) + 1;
 }
-String PortableSubString(const String &text, int start, int count) {
+static String PortableSubString(const String &text, int start, int count) {
     if (start <= 0 || count <= 0) return "";
     const auto offset = static_cast<std::size_t>(start - 1);
     if (offset >= text.size()) return "";

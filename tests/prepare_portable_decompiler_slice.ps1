@@ -1,9 +1,11 @@
 $src = Get-Content -Raw -LiteralPath "$PSScriptRoot\..\Decompiler.cpp"
 $start = $src.IndexOf('String __fastcall GetString(PITEM item, Byte precedence)')
-$end = $src.IndexOf('TNamer::TNamer()', $start)
+$end = $src.IndexOf('void __fastcall TDecompiler::InitFlags()', $start)
 if ($start -lt 0 -or $end -lt 0) { throw 'Decompiler slice markers not found' }
 $body = $src.Substring($start, $end - $start)
 $prefix = @'
+#include <cstdio>
+#include <cstring>
 #include "portable_core_compat.h"
 #include "generated/Decompiler.portable.h"
 

@@ -39,6 +39,7 @@ Successfully compiled on GitHub-hosted MSVC x86:
 - primary real `Decompiler.cpp` slice from `GetString()` through complete `TDecompiler::Init()`
 - complete independent BJL/branch-analysis slice from `GetBJLRange()` through `PrintBJL()`
 - complete independent main-engine slice containing all of `TDecompiler::Decompile()`
+- complete `TDecompiler::DecompileCaseEnum()` slice
 
 ### Primary decompiler milestone
 
@@ -70,13 +71,21 @@ The third independent implementation slice covers complete `TDecompiler::Decompi
 
 This is the strongest portability result so far: the main decompiler engine is compiler-portable at object-compilation level once its hidden core dependencies, limited UI-policy seams and observed Embarcadero RTL semantics are made explicit. This is not yet runtime semantic equivalence and not yet a linked CLI.
 
-## Current active test: case-enum slice
+## Case-enum milestone
 
-A fourth independent implementation slice now isolates complete `TDecompiler::DecompileCaseEnum()` between `Decompile()` and `GetSysCallAlias()`.
+A fourth independent implementation slice isolates complete `TDecompiler::DecompileCaseEnum()` between `Decompile()` and `GetSysCallAlias()`.
 
 Known numeric case-label construction (`String(n + N)` / `String(m + N)`) is translated narrowly to `std::to_string(...)` in the generated smoke copy. The original source remains unchanged.
 
-Keeping this slice independent preserves #49 as a stable main-engine milestone while mapping the next algorithmic block.
+- #51: **complete `TDecompiler::DecompileCaseEnum()` compiles successfully with MSVC x86**. Job metadata confirmed all workflow steps green; no successful-run log was fetched.
+
+## Current active test: syscall simulation slice
+
+A fifth independent slice now covers `TDecompiler::GetSysCallAlias()` and complete `TDecompiler::SimulateSysCall()`, stopping immediately before `SimulateCall()`.
+
+The syscall generator reuses the already-proven prefix from the main engine generator rather than duplicating its large declaration surface. Known numeric `String(...)` forms and already-mapped `SubString()` / `Length()` behavior are transformed only in the generated copy.
+
+Keeping this slice independent preserves the #49 main-engine and #51 case-enum milestones while mapping runtime/syscall reconstruction separately.
 
 ### Engine GUI/interactivity boundary
 
@@ -111,7 +120,7 @@ Compiler-verified String/RTL differences currently mapped or exposed in generate
 
 ### `Main.h`
 
-Mixes core records/constants with VCL GUI state. Runs through #49 strongly support extracting reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
+Mixes core records/constants with VCL GUI state. Runs through #51 strongly support extracting reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
 
 ### `Misc.h`
 

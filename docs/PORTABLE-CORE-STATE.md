@@ -60,51 +60,50 @@ The complete BJL slice is now a stable green block. Original source remains unch
 
 A third independent implementation slice covers complete `TDecompiler::Decompile()` and stops immediately before `TDecompiler::DecompileCaseEnum()`.
 
-Run #40 was the first compile of the full engine slice. MSVC reached its 100-error cap, but the observed failures were overwhelmingly missing core declarations/constants normally made visible transitively through `Main.h` and `Misc.h`. The first dependency batch exposed those APIs explicitly without changing the original algorithm.
+- #40: first full engine compile hit MSVC's 100-error cap, overwhelmingly on hidden core declarations/constants from `Main.h`/`Misc.h`.
+- #42: progressed much deeper and exposed additional RTL/String semantics plus the first direct GUI/policy coupling inside `Decompile()`.
+- #44: progressed beyond that UI boundary. It exposed another form-owned analysis call (`FMain_11011981->GetMethodInfo`) and also caught an over-broad smoke transformation that accidentally produced `GetImmstd::to_string`; the generator was corrected instead of changing original source.
+- #46: major convergence milestone. The engine no longer hit the 100-error cap. The remaining errors were a bounded set dominated by numeric `String(...)` conversions, `TStringList::Objects` / `IndexOfName`, `Variant`, record/name/try helpers, and a handful of missing flags/kinds.
 
-Run #42 progressed substantially beyond #40 and exposed three new categories:
+The #46 remainder has now been batched without touching `Decompiler.cpp`. `TStringList` smoke compatibility gained aligned `Objects` storage and `IndexOfName`; `Variant` has a temporary compile alias; missing try/except/code flags and helper declarations were added; and only explicitly identified numeric `String(...)` forms are translated.
 
-1. A second large set of pure core-analysis helpers and type-kind constants from `Misc.h` / `Main.h`.
-2. Additional Embarcadero RTL/String semantics: `IntToStr`, `IntToHex`, `AnsiString`, numeric `String(...)` construction and 1-based `String::Pos()`.
-3. The first direct GUI/interactivity coupling found inside `TDecompiler::Decompile()` itself.
+### Engine GUI/interactivity boundary
 
-### Engine GUI/interactivity boundary found in #42
+Embedded-procedure handling directly reads/writes `FMain_11011981->lbCode->ItemIndex` and calls `Application->MessageBox()`. The generated smoke copy replaces that plumbing with `PortableConfirmEmbeddedProcedure(...)` rather than fake VCL classes.
 
-Embedded-procedure handling directly reads/writes `FMain_11011981->lbCode->ItemIndex` and calls `Application->MessageBox()` to ask whether an embedded procedure should be decompiled. Other uncertain-call paths use `ManualInput(...)`.
+Virtual-method lookup is analysis logic but is currently owned by the form through `FMain_11011981->GetMethodInfo`; the smoke copy exposes it as `PortableGetMethodInfo(...)`.
 
-This is not being ported by inventing fake VCL form/application classes. The generated smoke copy replaces only the embedded-procedure GUI plumbing with a policy-shaped `PortableConfirmEmbeddedProcedure(...)` dependency while preserving the analysis path. `ManualInput(...)` remains an explicit dependency and is a candidate for a future headless resolver callback.
-
-A real portable core should eventually expose policies/interfaces such as:
-
-- embedded procedures: always / never / callback
-- unknown return bytes or types: resolver callback or deterministic CLI failure
-
-The original `Decompiler.cpp` remains unchanged.
+`ManualInput(...)` remains an explicit dependency for unresolved return-byte/type cases and should eventually become a resolver callback or deterministic CLI policy.
 
 ## Compatibility layer status
 
-`tests/portable_core_compat.h` supplies temporary compiler-neutral aliases/containers plus only constants reached by tested code. After #42 this includes additional observed kinds such as integer, char, enumeration, class, wide/Unicode/string-pointer kinds, arrays, Int64, VMT and procedure. `AnsiString` is temporarily mapped to `std::string` for compile smoke.
+`tests/portable_core_compat.h` supplies temporary compiler-neutral aliases/containers plus only constants reached by tested code.
 
 Compiler-verified String/RTL differences currently mapped or exposed in generated smoke code:
 
-- numeric `String(int)` -> `std::to_string(...)`
+- numeric `String(int)` -> controlled `std::to_string(...)` transforms
 - `.Length()` -> `.size()`
 - `String::Pos()` -> helper preserving 1-based/zero-not-found semantics
-- `AnsiReplaceText()` exposed by a narrow String-only declaration
-- `IntToStr` / `IntToHex` exposed as RTL dependencies
+- `SubString()` -> helper preserving 1-based start semantics
+- `SetLength()` -> `resize()` for observed smoke use
+- `AnsiReplaceText()`, `IntToStr`, `IntToHex`, `QuotedStr` exposed as dependencies
 - `AnsiString` temporarily mapped to `std::string`
+- `WideString` has a minimal smoke wrapper
+- `Variant` has a temporary integer-compatible smoke alias
 
-Still to map as encountered: SubString, broader 1-based indexing, case-insensitive behavior and Unicode/ANSI semantics.
+`String = std::string` is increasingly strained. Do not treat compile success as runtime semantic equivalence, especially for direct 1-based indexing. A thin compatibility type may become justified after the remaining indexing behavior is mapped.
+
+`TStringList` now includes `Strings`, aligned `Objects`, sorted insertion, `IndexOf`, and `IndexOfName`. This is still a targeted compatibility shim, not a full VCL implementation.
 
 ## Architectural boundaries found
 
 ### `Main.h`
 
-Mixes core records/constants with VCL GUI state. Runs through #42 strongly support extracting reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
+Mixes core records/constants with VCL GUI state. Runs through #46 strongly support extracting reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
 
 ### `Misc.h`
 
-Mixes pure analysis helpers with `TForm`, `TCanvas`, clipboard and dialog helpers. The main engine uses many of the pure helpers without needing the UI half, strengthening the case for a separate core-analysis API header.
+Mixes pure analysis helpers with forms/canvas/dialog helpers. The main engine uses many pure helpers without needing the UI half, strengthening the case for a separate core-analysis API header.
 
 ### GUI boundary after `TDecompiler::Init()`
 
@@ -112,7 +111,7 @@ Mixes pure analysis helpers with `TForm`, `TCanvas`, clipboard and dialog helper
 
 ### GUI/interactivity inside `TDecompiler::Decompile()`
 
-Run #42 proved that the engine itself also contains limited interactive policy/UI code around embedded procedures and unresolved calls. These need callbacks/policies in a real headless core rather than VCL compatibility shims.
+The engine is overwhelmingly analysis code but contains small policy/UI decisions around embedded procedures, virtual-method lookup ownership, and unresolved-call input. These need injected interfaces/policies in a real headless core.
 
 ## Working rules
 

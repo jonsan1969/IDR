@@ -1,6 +1,6 @@
 $src = Get-Content -Raw -LiteralPath "$PSScriptRoot\..\Decompiler.cpp"
 $start = $src.IndexOf('String __fastcall GetString(PITEM item, Byte precedence)')
-$end = $src.IndexOf('bool __fastcall TDecompiler::Init(DWord fromAdr)', $start)
+$end = $src.IndexOf('void __fastcall TDecompileEnv::OutputSourceCodeLine(String line)', $start)
 if ($start -lt 0 -or $end -lt 0) { throw 'Decompiler slice markers not found' }
 $body = $src.Substring($start, $end - $start)
 $prefix = @'
@@ -19,6 +19,7 @@ int __fastcall Adr2Pos(DWord adr);
 DWord __fastcall Pos2Adr(int Pos);
 bool __fastcall IsFlagSet(DWord flag, int pos);
 void __fastcall ClearFlag(DWord flag, int pos);
+Byte __fastcall GetTypeKind(String TypeName, int *Size);
 
 '@
 New-Item -ItemType Directory -Force -Path "$PSScriptRoot\generated" | Out-Null

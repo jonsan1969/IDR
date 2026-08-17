@@ -61,32 +61,33 @@ using String = std::string;
 
 `String = std::string` is temporary and only compile-oriented.
 
-### Proven String mismatch
+### Proven String mismatches
 
-Run #33 established the first concrete Embarcadero String incompatibility:
+Run #33 established numeric construction:
 
 ```cpp
 String(m)
 String(m + 1)
 ```
 
-Embarcadero converts integers to decimal text; `std::string` has no such one-argument constructor. The generated BJL smoke copy therefore translates only these observed forms to:
+Embarcadero converts integers to decimal text; the generated smoke copy maps observed forms to `std::to_string(...)`. Run #34 proved that sufficient for complete `CreateBJLSequence()`.
 
-```cpp
-std::to_string(m)
-std::to_string(m + 1)
-```
+Run #36 established the second mismatch: Embarcadero `String::Length()` has no `std::string` member equivalent. The generated smoke copy maps observed `.Length()` calls to `.size()`. Run #37 proved that sufficient for the complete non-printing BJL helper span through `ExprMerge()`.
 
-Run #34 proved that narrow transform is sufficient for the complete `CreateBJLSequence()` span.
+Current `PrintBJL()` mapping adds numeric `String(k)` -> `std::to_string(k)`.
 
 Do not introduce a large custom String wrapper prematurely. Remaining semantics to map include:
 
 - 1-based indexing
 - `Pos()`
 - `SubString()`
-- case-insensitive helpers
+- case-insensitive helpers / `AnsiReplaceText`
 - Unicode/ANSI behavior
 - additional numeric constructors/conversions
+
+### `AnsiReplaceText`
+
+`PrintBJL()` uses `AnsiReplaceText()` from `System.StrUtils.hpp`. For the current compile-only slice, expose only a compatible String signature in the generated prefix rather than importing VCL/RTL headers or implementing replacement semantics prematurely. Runtime/link semantics must be supplied before a real portable executable/library target links this path.
 
 ### `TList`
 
@@ -102,13 +103,7 @@ Current STL-backed shim supports:
 
 ### `TStringList`
 
-Current minimal shim supports:
-
-- `Sorted`
-- `Count`
-- `Strings`
-- `Add()`
-- `IndexOf()`
+Current minimal shim supports `Sorted`, `Count`, `Strings`, `Add()`, and `IndexOf()`.
 
 Still watch duplicate handling, case sensitivity, ownership/Objects, sorted insertion and encoding semantics.
 
@@ -143,13 +138,9 @@ Known non-blocking warnings/issues:
 - unused locals
 - inline x86 asm modifies `ebp`
 
-Do not modernize these while mapping portability unless required.
-
-x64 is a separate later project because MSVC does not support inline asm in x64 mode.
+Do not modernize these while mapping portability unless required. x64 is a separate later project because MSVC does not support inline asm in x64 mode.
 
 ## `Decompiler.cpp` mapping
-
-The file is large and is intentionally mapped using multiple real implementation slices rather than one giant conversion.
 
 ### Primary slice
 
@@ -157,69 +148,40 @@ Starts at `GetString()` and runs through complete `TDecompiler::Init()`.
 
 Run #27: fully green.
 
-This span includes:
-
-- naming / condition helpers
-- `ITEM` manipulation
-- namer and loop/environment objects
-- saved context
-- decompiler construction/destruction
-- flags
-- register state
-- normal stack
-- FPU stack
-- prototype checking
-- calling convention argument setup
-- return-value setup
+This span includes naming/condition helpers, `ITEM` manipulation, namer/loop/environment objects, saved context, flags, register state, normal/FPU stacks, prototype checking, calling-convention argument setup and return-value setup.
 
 ### GUI boundary
 
-Immediately after `TDecompiler::Init()`:
-
-- `OutputSourceCodeLine()`
-- `OutputSourceCode()`
-- `DecompileProc()`
-
-The first writes directly to `FMain_11011981->lbSourceCode`; output logic also uses Embarcadero-specific String behavior. This block is intentionally skipped, not treated as a core blocker.
+Immediately after `TDecompiler::Init()` are `OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()`. Direct `FMain_11011981` output and Embarcadero String behavior make this a presentation/orchestration boundary, so it is intentionally skipped.
 
 ### BJL / branch-analysis slice
 
 Starts at `TDecompileEnv::GetBJLRange()`.
 
-Dependencies exposed explicitly instead of importing mixed GUI headers:
-
-- global `Disasm`
-- global `Code`
-- `Adr2Pos()`
-- `IsFlagSet()`
-- `BranchGetPrevInstructionType()`
-- `GetDirectCondition()`
-- `GetInvertCondition()`
-- `cfSkip`
+Dependencies exposed explicitly instead of importing mixed GUI headers include global `Disasm`, global `Code`, `Adr2Pos()`, `IsFlagSet()`, `BranchGetPrevInstructionType()`, `GetDirectCondition()`, `GetInvertCondition()`, and `cfSkip`.
 
 Milestones:
 
 - #30 red: missing declaration for `BranchGetPrevInstructionType()`.
-- #31 green: complete `GetBJLRange()` compiles.
-- #33 red: only numeric `String(int)` construction fails inside `CreateBJLSequence()`.
-- #34 green: complete `CreateBJLSequence()` compiles after narrow generated `std::to_string()` conversion.
+- #31 green: complete `GetBJLRange()`.
+- #33 red: numeric `String(int)` mismatch inside `CreateBJLSequence()`.
+- #34 green: complete `CreateBJLSequence()` after narrow `std::to_string()` transform.
+- #35 green: complete `UpdateBJLList()` and `BJLAnalyze()` with no new shim.
+- #36 red: `.Length()` mismatch in the expanded helper block.
+- #37 green: complete helper span through `ExprMerge()` after `.Length()` -> `.size()` transform.
 
-### Active BJL expansion
+### Active BJL expansion: `PrintBJL()`
 
-Current branch-slice end marker has moved to immediately before:
+The branch-slice end marker is now immediately before `TDecompiler::Decompile()`, so the active compile additionally includes complete `TDecompileEnv::PrintBJL()`.
+
+Observed dependencies:
 
 ```cpp
-bool __fastcall TDecompileEnv::BJLGetIdx(...)
+String(k)
+AnsiReplaceText(...)
 ```
 
-Therefore the active compile now additionally includes:
-
-- complete `UpdateBJLList()`
-- complete `BJLAnalyze()`
-
-Triggering commit: `cef522d6e7b4aec18002b2a9e7a298a9203ab8ad`.
-
-This is the next meaningful test of expression merging/pattern analysis and container mutation without crossing into GUI code.
+The generated smoke copy maps `String(k)` to `std::to_string(k)` and declares only the String signature of `AnsiReplaceText()` for compile-only validation. Triggering commit: `5170af65ceb3fdf2edf3e728b85ec007d903d1be`.
 
 ## Mixed-responsibility headers
 
@@ -233,11 +195,7 @@ Contains pure analysis helpers such as `BranchGetPrevInstructionType()` alongsid
 
 ### `TypeInfo2.*`
 
-Contains useful RTTI logic mixed with a VCL form. Later candidate extraction:
-
-- `Guid2String`
-- `GetRTTI`
-- `GetCppTypeInfo`
+Contains useful RTTI logic mixed with a VCL form. Later candidate extraction: `Guid2String`, `GetRTTI`, `GetCppTypeInfo`.
 
 ### UI-only / initially excluded
 
@@ -261,6 +219,9 @@ Contains useful RTTI logic mixed with a VCL form. Later candidate extraction:
 - #31: green through complete `GetBJLRange()`.
 - #33: red only on `String(int)` semantics.
 - #34: green through complete `CreateBJLSequence()`.
+- #35: green through `UpdateBJLList()` + `BJLAnalyze()`.
+- #36: red only on `.Length()` semantics.
+- #37: green through all non-printing BJL helpers up to `ExprMerge()`.
 
 ## Working rules
 

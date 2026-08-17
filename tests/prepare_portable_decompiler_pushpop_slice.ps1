@@ -18,7 +18,8 @@ $bodyMarkCase = Get-MethodBody 'TDecompiler::MarkCaseEnum(' 'void __fastcall '
 $bodyMarkGeneral = Get-MethodBody 'TDecompiler::MarkGeneralCase(' 'void __fastcall '
 $bodyGeneralCase = Get-MethodBody 'TDecompiler::DecompileGeneralCase(' 'DWord __fastcall '
 $bodyTry = Get-MethodBody 'TDecompiler::DecompileTry(' 'DWord __fastcall '
-$body = $bodyPush + $bodyPop + $bodyFloat + $bodyFormat + $bodyMarkCase + $bodyMarkGeneral + $bodyGeneralCase + $bodyTry
+$bodyConditions = Get-MethodBody 'TDecompiler::AnalyzeConditions(' 'int __fastcall '
+$body = $bodyPush + $bodyPop + $bodyFloat + $bodyFormat + $bodyMarkCase + $bodyMarkGeneral + $bodyGeneralCase + $bodyTry + $bodyConditions
 
 & "$PSScriptRoot\prepare_portable_decompiler_engine_slice.ps1"
 $engine = Get-Content -Raw -LiteralPath "$PSScriptRoot\generated\Decompiler.engine.slice.cpp"

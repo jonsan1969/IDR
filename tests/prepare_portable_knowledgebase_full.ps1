@@ -27,6 +27,11 @@ $prefix = @'
 #include <string>
 #include "../../portable/core/IdrLegacyCompat.h"
 
+// Analysis helpers historically reached through Misc.h. The real definitions
+// are supplied by the generated Misc TU / legacy bridge at link time.
+bool __fastcall MatchCode(Byte *code, MProcInfo *pInfo);
+bool __fastcall SameText(const String &left, const String &right);
+
 // CleanupList historically came from Main.h. The semantics needed here are
 // just ownership cleanup for pointer elements followed by deletion of TList.
 template <typename T>

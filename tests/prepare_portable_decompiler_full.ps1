@@ -80,7 +80,7 @@ $src = $src -replace '\bFalse\b', 'false'
 $numericStringArgs = @(
     '_div', '_mod', '_pow2', '_offset', '-_offset', '_imm', '_argsNum', '_retBytes',
     '_cnt', '_k', '-_k', '_N', '_N1', '_N2', '_N1 - _N2', '_N1 - 1',
-    'k', 'k + 1', 'm', 'm + 1', 'n + N', 'n + N + 1',
+    'k', 'k + 1', 'm', 'm + 1', 'm + N', 'n + N', 'n + N + 1',
     '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_item4.IntValue',
     'item.IntValue', 'item1.IntValue', 'item2.IntValue',
     'DisInfo.Immediate', 'DisInfo.Offset', 'DisInfo.Scale',

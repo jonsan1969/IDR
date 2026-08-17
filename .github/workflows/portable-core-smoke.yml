@@ -72,6 +72,17 @@ jobs:
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
           cl /nologo /std:c++17 /W4 /EHsc /Itests /I. /c tests\generated\Decompiler.branch.slice.cpp /Fo:Decompiler.branch.slice.obj
 
+      - name: Prepare Decompiler engine slice
+        shell: pwsh
+        run: .\tests\prepare_portable_decompiler_engine_slice.ps1
+
+      - name: Compile Decompiler engine slice
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
+          call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
+          cl /nologo /std:c++17 /W4 /EHsc /Itests /I. /c tests\generated\Decompiler.engine.slice.cpp /Fo:Decompiler.engine.slice.obj
+
       - name: Prepare portable Disasm.cpp copy
         shell: pwsh
         run: .\tests\prepare_portable_disasm.ps1

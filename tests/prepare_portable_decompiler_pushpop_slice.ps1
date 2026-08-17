@@ -58,27 +58,26 @@ String __fastcall GetEnumerationString(String typeName, String value);
 '@
 
 $numericStringArgs = @(
-    '_offset', '_foffset', '_fofs', '_pow2', '_mod', '_size', '_sz', '_ofs', '_pos', '_idx', '_idx1', '_lIdx', '_hIdx', '_cnt', '_classSize', '_ap', '_adr', '_ea', '_cmpRes', '_len', '_N', '_N1',
+    '_offset', '_foffset', '_fofs', '_pow2', '_mod', '_size', '_sz', '_ofs', '_pos', '_idx', '_idx1', '_lIdx', '_hIdx', '_cnt', '_classSize', '_ap', '_adr', '_ea', '_cmpRes', '_len', '_N', '_N1', '_k',
     'item.IntValue', '_item.IntValue', '_item1.IntValue', '_item2.IntValue', '_item3.IntValue', '_itemBase.IntValue', '_itemSrc.IntValue', '_itemDst.IntValue',
     'Env->Stack[varIdxInfo.IdxValue].IntValue',
     'DisInfo.Immediate', 'DisInfo.Offset', 'DisInfo.Scale', 'ADisInfo->Immediate', 'ADisInfo->Offset', 'ADisInfo->Scale'
 )
 foreach ($arg in $numericStringArgs) {
-    $escaped = [regex]::Escape($arg)
-    $body = $body -replace "(?<![A-Za-z0-9_])String\($escaped\)", "std::to_string($arg)"
+    $body = $body.Replace("String($arg)", "std::to_string($arg)")
 }
-$body = $body -replace 'String\(_N1\s*-\s*_N2\)', 'std::to_string(_N1 - _N2)'
-$body = $body -replace 'String\(_N1\s*-\s*1\)', 'std::to_string(_N1 - 1)'
-$body = $body -replace 'String\(intTo\s*-\s*1\)', 'std::to_string(intTo - 1)'
-$body = $body -replace 'String\(intTo\s*\+\s*1\)', 'std::to_string(intTo + 1)'
 
-# The final helpers contain a small set of BCB numeric String conversions.
-# Use exact literal replacements here: this avoids broad String(...) rewriting
-# and cannot touch legitimate pointer/string constructors.
-$body = $body.Replace('String(item.IntValue)', 'std::to_string(item.IntValue)')
-$body = $body.Replace('String(Env->Stack[varIdxInfo.IdxValue].IntValue)', 'std::to_string(Env->Stack[varIdxInfo.IdxValue].IntValue)')
+# Exact arithmetic forms used by the covered helpers. Keep these narrow so
+# pointer/character String constructors remain untouched.
+$body = $body.Replace('String(_N1 - _N2)', 'std::to_string(_N1 - _N2)')
+$body = $body.Replace('String(_N1 - 1)', 'std::to_string(_N1 - 1)')
 $body = $body.Replace('String(intTo - 1)', 'std::to_string(intTo - 1)')
 $body = $body.Replace('String(intTo + 1)', 'std::to_string(intTo + 1)')
+$body = $body.Replace('String(-_offset)', 'std::to_string(-_offset)')
+$body = $body.Replace('String(_offset + 1)', 'std::to_string(_offset + 1)')
+$body = $body.Replace('String(-_k)', 'std::to_string(-_k)')
+$body = $body.Replace('String(_offset - _foffset)', 'std::to_string(_offset - _foffset)')
+
 # Currency in C++Builder exposes a textual conversion operator. Keep this as a
 # compile-smoke-only numeric rendering until the real portable Currency type exists.
 $body = $body.Replace('_currVal.operator String()', 'std::to_string(_currVal.Val)')

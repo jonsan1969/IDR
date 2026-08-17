@@ -60,46 +60,59 @@ The complete BJL slice is now a stable green block. Original source remains unch
 
 A third independent implementation slice covers complete `TDecompiler::Decompile()` and stops immediately before `TDecompiler::DecompileCaseEnum()`.
 
-Run #40 was the first compile of the full engine slice. MSVC reached its 100-error cap, but the observed failures were overwhelmingly missing core declarations/constants normally made visible transitively through `Main.h` and `Misc.h`, not VCL calls or a compiler-language blocker.
+Run #40 was the first compile of the full engine slice. MSVC reached its 100-error cap, but the observed failures were overwhelmingly missing core declarations/constants normally made visible transitively through `Main.h` and `Misc.h`. The first dependency batch exposed those APIs explicitly without changing the original algorithm.
 
-Observed dependency groups in #40 included:
+Run #42 progressed substantially beyond #40 and exposed three new categories:
 
-- address/flag helpers (`Adr2Pos`, `Pos2Adr`, `IsFlagSet`, `SetFlag`, `SetFlags`, `ClearFlag`)
-- procedure/info helpers (`GetProcSize`, `GetInfoRec`, `GetNearestUpInstruction`)
-- decompiler helpers (`GetDecompilerRegisterName`, `InitItem`, `GetDirectCondition`, `BranchGetPrevInstructionType`)
-- analysis helpers (`IsIntOver`, `IsExit`, `IsValidCodeAdr`, Int64 comparison helpers)
-- string/helper APIs (`Val2Str8`, `SameText`, `ExtractProcName`, inheritance-name check)
-- globals `Disasm` and `Code`
-- additional core flags/kinds from `Main.h`
-- Borland `Exception::Message` semantics in catch/rethrow paths
+1. A second large set of pure core-analysis helpers and type-kind constants from `Misc.h` / `Main.h`.
+2. Additional Embarcadero RTL/String semantics: `IntToStr`, `IntToHex`, `AnsiString`, numeric `String(...)` construction and 1-based `String::Pos()`.
+3. The first direct GUI/interactivity coupling found inside `TDecompiler::Decompile()` itself.
 
-The first batch fix exposes these exact dependencies without including the VCL-heavy headers. No original algorithm source is changed.
+### Engine GUI/interactivity boundary found in #42
+
+Embedded-procedure handling directly reads/writes `FMain_11011981->lbCode->ItemIndex` and calls `Application->MessageBox()` to ask whether an embedded procedure should be decompiled. Other uncertain-call paths use `ManualInput(...)`.
+
+This is not being ported by inventing fake VCL form/application classes. The generated smoke copy replaces only the embedded-procedure GUI plumbing with a policy-shaped `PortableConfirmEmbeddedProcedure(...)` dependency while preserving the analysis path. `ManualInput(...)` remains an explicit dependency and is a candidate for a future headless resolver callback.
+
+A real portable core should eventually expose policies/interfaces such as:
+
+- embedded procedures: always / never / callback
+- unknown return bytes or types: resolver callback or deterministic CLI failure
+
+The original `Decompiler.cpp` remains unchanged.
 
 ## Compatibility layer status
 
-`tests/portable_core_compat.h` supplies temporary compiler-neutral aliases/containers plus selected core constants. After #40 it also includes the engine-required flags/kinds (`cfFrame`, `cfSwitch`, `cfDSkip`, `cfTry`, `cfLoop`, `cfFinallyExit`, `ikUnknown`, `ikConstructor`, `ikDestructor`) and an `Exception::Message` member compatible with the observed Borland exception usage.
+`tests/portable_core_compat.h` supplies temporary compiler-neutral aliases/containers plus only constants reached by tested code. After #42 this includes additional observed kinds such as integer, char, enumeration, class, wide/Unicode/string-pointer kinds, arrays, Int64, VMT and procedure. `AnsiString` is temporarily mapped to `std::string` for compile smoke.
 
-Compiler-verified String differences currently mapped in generated smoke code:
+Compiler-verified String/RTL differences currently mapped or exposed in generated smoke code:
 
 - numeric `String(int)` -> `std::to_string(...)`
 - `.Length()` -> `.size()`
-- `AnsiReplaceText()` exposed by a narrow String-only declaration for compile smoke
+- `String::Pos()` -> helper preserving 1-based/zero-not-found semantics
+- `AnsiReplaceText()` exposed by a narrow String-only declaration
+- `IntToStr` / `IntToHex` exposed as RTL dependencies
+- `AnsiString` temporarily mapped to `std::string`
 
-Still to map as encountered: 1-based indexing, `Pos()`, `SubString()`, case-insensitive behavior, Unicode/ANSI semantics and other RTL helpers.
+Still to map as encountered: SubString, broader 1-based indexing, case-insensitive behavior and Unicode/ANSI semantics.
 
 ## Architectural boundaries found
 
 ### `Main.h`
 
-Mixes core records/constants with VCL GUI state. Runs through #40 increasingly support extracting reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
+Mixes core records/constants with VCL GUI state. Runs through #42 strongly support extracting reusable core definitions into a neutral header (`CoreTypes.h` / `IdrTypes.h`).
 
 ### `Misc.h`
 
-Mixes pure analysis helpers with `TForm`, `TCanvas`, clipboard and dialog helpers. The engine dependency wall reinforces that a neutral core-analysis API header would remove many transitive dependencies without pulling in VCL.
+Mixes pure analysis helpers with `TForm`, `TCanvas`, clipboard and dialog helpers. The main engine uses many of the pure helpers without needing the UI half, strengthening the case for a separate core-analysis API header.
 
 ### GUI boundary after `TDecompiler::Init()`
 
-`OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()` directly couple to form/presentation behavior and are intentionally skipped by the headless core mapping.
+`OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()` directly couple to form/presentation behavior and remain intentionally skipped by the headless core mapping.
+
+### GUI/interactivity inside `TDecompiler::Decompile()`
+
+Run #42 proved that the engine itself also contains limited interactive policy/UI code around embedded procedures and unresolved calls. These need callbacks/policies in a real headless core rather than VCL compatibility shims.
 
 ## Working rules
 

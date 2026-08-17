@@ -1,8 +1,8 @@
 $src = Get-Content -Raw -LiteralPath "$PSScriptRoot\..\Decompiler.cpp"
 $startName = $src.IndexOf('TDecompiler::GetSysCallAlias(')
-$endName = $src.IndexOf('TDecompiler::SimulateCall(', [Math]::Max($startName, 0))
+$endName = $src.IndexOf('TDecompiler::SimulateInherited(', [Math]::Max($startName, 0))
 $start = if ($startName -ge 0) { $src.LastIndexOf('String __fastcall ', $startName) } else { -1 }
-$end = if ($endName -ge 0) { $src.LastIndexOf('bool __fastcall ', $endName) } else { -1 }
+$end = if ($endName -ge 0) { $src.LastIndexOf('void __fastcall ', $endName) } else { -1 }
 if ($start -lt 0 -or $end -lt 0 -or $end -le $start) {
     throw "Decompiler syscall slice markers not found (startName=$startName start=$start endName=$endName end=$end)"
 }

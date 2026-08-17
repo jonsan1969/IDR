@@ -89,13 +89,13 @@ jobs:
         shell: cmd
         run: .\idr-core-link-probe.exe
 
-      - name: Link PE32 loader probe
+      - name: Link PE32 session probe
         shell: cmd
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          link /nologo /subsystem:console /out:idr-pe-loader-probe.exe IdrImageContext.obj IdrPeLoader.obj idr_pe_loader_probe.obj || exit /b 1
+          link /nologo /subsystem:console /out:idr-pe-loader-probe.exe IdrCoreServices.obj IdrImageContext.obj IdrPeLoader.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj IdrDecompilerModel.obj IdrLegacyBridge.obj idr_pe_loader_probe.obj Disasm.portable.obj KnowledgeBase.portable.obj Infos.portable.obj Misc.portable.obj Decompiler.portable.obj || exit /b 1
 
-      - name: Run PE32 loader probe
+      - name: Run PE32 session probe
         shell: cmd
         run: .\idr-pe-loader-probe.exe

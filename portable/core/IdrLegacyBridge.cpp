@@ -4,6 +4,7 @@
 #include "IdrImageContext.h"
 #include "IdrInstructionNav.h"
 #include "IdrLegacyCompat.h"
+#include "IdrPeLoader.h"
 
 #include <algorithm>
 #include <cctype>
@@ -14,6 +15,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <vector>
 
 int dummy = 0;
 int MaxBufLen = 0;
@@ -21,6 +23,8 @@ int DelphiVersion = 0;
 MDisasm Disasm;
 MKnowledgeBase KnowledgeBase;
 DWord CurProcAdr = 0;
+DWord EP = 0;
+DWord ImageBase = 0;
 DWord ImageSize = 0;
 DWord TotalSize = 0;
 DWord CodeBase = 0;
@@ -32,6 +36,8 @@ TList *SegmentList = nullptr;
 TList *OwnTypeList = nullptr;
 TList *VmtList = nullptr;
 char StringBuf[10000] = {};
+
+extern Byte *Code;
 
 int cVmtSelfPtr = 0;
 int cVmtIntfTable = 0;
@@ -53,9 +59,11 @@ String __fastcall GetEnumerationString(String TypeName, Variant Val);
 
 namespace {
 idr::core::AnalysisState fallbackState;
+idr::core::AnalysisState loadedState;
 idr::core::AnalysisState *activeState = &fallbackState;
 idr::core::Services fallbackServices = idr::core::MakeHeadlessServices();
 idr::core::Services *activeServices = &fallbackServices;
+std::vector<PInfoRec> loadedInfoSlots;
 std::map<String,DWord> classAddressCache;
 MethodRec portableMethodRecord{};
 
@@ -69,6 +77,11 @@ void EnsureFallbackSize(){
         if(fallbackState.Size()!=size) fallbackState.Resize(size);
     }
     SyncLegacyFlagsView();
+}
+void ReleaseLoadedInfos(){
+    for(auto *info:loadedInfoSlots) delete info;
+    loadedInfoSlots.clear();
+    Infos=nullptr;
 }
 char LowerAscii(char ch){return static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));}
 String LowerAsciiCopy(const String &value){String result=value;std::transform(result.begin(),result.end(),result.begin(),LowerAscii);return result;}
@@ -91,6 +104,47 @@ void SetLegacyAnalysisState(AnalysisState *state){activeState=state?state:&fallb
 AnalysisState &LegacyAnalysisState(){EnsureFallbackSize();return *activeState;}
 void SetLegacyServices(Services *services){activeServices=services?services:&fallbackServices;}
 Services &LegacyServices(){return *activeServices;}
+
+void ActivateLegacyLoadedPeSession(LoadedPeImage &image){
+    ReleaseLoadedInfos();
+    ActivateLoadedPeImage(image);
+    loadedState=AnalysisState(image.bytes.size());
+    activeState=&loadedState;
+    SyncLegacyFlagsView();
+    loadedInfoSlots.assign(image.bytes.size(),nullptr);
+    Infos=loadedInfoSlots.empty()?nullptr:loadedInfoSlots.data();
+    EP=image.entryPoint;
+    ImageBase=image.imageBase;
+    ImageSize=image.imageSize;
+    TotalSize=static_cast<DWord>(image.bytes.size());
+    CodeBase=image.codeBase;
+    CodeSize=image.codeSize;
+    Code=image.bytes.empty()?nullptr:image.bytes.data();
+    CurProcAdr=0;
+    classAddressCache.clear();
+}
+
+void ResetLegacyLoadedPeSession(){
+    ReleaseLoadedInfos();
+    SetImageView({});
+    loadedState=AnalysisState();
+    activeState=&fallbackState;
+    fallbackState=AnalysisState();
+    Flags=nullptr;
+    Code=nullptr;
+    EP=0;
+    ImageBase=0;
+    ImageSize=0;
+    TotalSize=0;
+    CodeBase=0;
+    CodeSize=0;
+    CurProcAdr=0;
+    classAddressCache.clear();
+}
+
+LegacyImageSessionView GetLegacyImageSessionView(){
+    return {EP,ImageBase,ImageSize,TotalSize,CodeBase,CodeSize,LegacyAnalysisState().Size(),Flags,reinterpret_cast<void *const *>(Infos),Code};
+}
 }
 
 bool __fastcall IsFlagSet(DWord flag,int pos){if(pos<0)return false;return idr::core::LegacyAnalysisState().IsFlagSet(flag,static_cast<std::size_t>(pos));}

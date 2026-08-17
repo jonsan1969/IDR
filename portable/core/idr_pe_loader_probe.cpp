@@ -1,6 +1,8 @@
 #include "IdrImageContext.h"
+#include "IdrLegacyBridge.h"
 #include "IdrPeLoader.h"
 
+#define NOMINMAX
 #include <Windows.h>
 
 #include <cstring>
@@ -120,7 +122,7 @@ int main() {
     if (image.bytes[0] != 0x90 || image.bytes[1] != 0xC3) return 13;
     if (image.bytes[0x1000] != 0xCC || image.bytes[0x1002] != 0x2A) return 14;
 
-    idr::core::ActivateLoadedPeImage(image);
+    idr::core::ActivateLegacyLoadedPeSession(image);
     if (idr::core::AddressToOffset(0x00401001) != 1) return 15;
     if (idr::core::AddressToOffset(0x00402010) != -1) return 16;
     if (idr::core::AddressToOffset(0x00403002) != 0x1002) return 17;
@@ -128,6 +130,22 @@ int main() {
     const auto address = idr::core::OffsetToAddress(0x1002);
     if (!address || *address != 0x00403002) return 19;
 
-    std::cout << "portable PE32 probe: base=00400000 entry=00401000 packed=0x2000 segments=4\n";
+    const auto session = idr::core::GetLegacyImageSessionView();
+    if (session.entryPoint != 0x00401000 || session.imageBase != 0x00400000) return 20;
+    if (session.imageSize != 0x5000 || session.totalSize != 0x2000) return 21;
+    if (session.codeBase != 0x00401000 || session.codeSize != 0x2000) return 22;
+    if (session.analysisSize != 0x2000 || !session.flags || !session.infos || !session.code) return 23;
+    if (session.code != image.bytes.data() || session.code[0] != 0x90 || session.code[0x1002] != 0x2A) return 24;
+    if (session.flags[0] != 0 || session.infos[0] != nullptr) return 25;
+    if (!idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::Code, 0)) return 26;
+    if ((session.flags[0] & idr::core::CodeFlags::Code) == 0) return 27;
+
+    idr::core::ResetLegacyLoadedPeSession();
+    const auto reset = idr::core::GetLegacyImageSessionView();
+    if (reset.entryPoint || reset.imageBase || reset.imageSize || reset.totalSize || reset.codeBase || reset.codeSize) return 28;
+    if (reset.analysisSize != 0 || reset.flags || reset.infos || reset.code) return 29;
+    if (idr::core::GetImageView().data != nullptr || !idr::core::GetImageSegments().empty()) return 30;
+
+    std::cout << "portable PE32 session probe: base=00400000 entry=00401000 packed=0x2000 legacy-state=bound\n";
     return 0;
 }

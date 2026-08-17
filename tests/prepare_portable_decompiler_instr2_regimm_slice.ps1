@@ -25,6 +25,10 @@ foreach ($arg in $numericStringArgs) {
     $body = $body -replace "(?<![A-Za-z0-9_])String\($escaped\)", "std::to_string($arg)"
 }
 
+# Embarcadero String accepts numeric zero directly; std::string does not. In
+# this slice both cases are comparison RHS values and mean the text "0".
+$body = $body -replace 'CmpInfo\.R\s*=\s*0;', 'CmpInfo.R = "0";'
+
 $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.Pos\(([^\r\n\)]+)\)', 'PortableStringPos($1, $2)'
 $body = $body -replace '([A-Za-z_][A-Za-z0-9_]*(?:(?:\.|->)[A-Za-z_][A-Za-z0-9_]*)*)\.SubString\(([^,\r\n]+),\s*([^\)\r\n]+)\)', 'PortableSubString($1, $2, $3)'
 $body = $body -replace '\.Length\(\)', '.size()'

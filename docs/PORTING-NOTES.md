@@ -17,20 +17,9 @@ The experiment asks whether the analysis/decompiler core can become compiler-neu
 
 Workflow: `.github/workflows/portable-core-smoke.yml`
 
-Observed hosted environment:
+Observed hosted environment: Windows Server 2025 / `windows-2025-vs2026`, VS 2026, MSVC x86 through `vswhere.exe` + `vcvars32.bat`.
 
-- Windows Server 2025
-- `windows-2025-vs2026`
-- VS 2026 Developer Command Prompt 18.8.2
-- x86 environment via `vswhere.exe` + `vcvars32.bat`
-
-Actions policy:
-
-- `actions/checkout@v6`
-- avoid Node.js 20 actions
-- no `ilammy/msvc-dev-cmd@v1`
-- `docs/**` ignored for push CI
-- stale runs cancelled with workflow concurrency
+Use `actions/checkout@v6`; avoid Node 20 actions. `docs/**` does not trigger push CI. Stale runs are cancelled through concurrency.
 
 Do not fetch successful run logs. For a failing run, fetch the log once, analyze it from the returned result, and fetch again only for a new run.
 
@@ -47,134 +36,120 @@ Generated transformed files live under `tests/generated` during CI. Original IDR
 
 ## Compatibility layer
 
-### Fundamental aliases
+Fundamental temporary aliases:
 
 ```cpp
 using Byte = std::uint8_t;
 using Word = std::uint16_t;
 using DWord = std::uint32_t;
 using String = std::string;
+using AnsiString = std::string;
 ```
 
-`String = std::string` is temporary and compile-oriented.
+### Proven String / RTL mismatches
 
-### Proven String mismatches
+- #33: numeric `String(int)` differs; generated smoke code uses `std::to_string(...)` for observed cases.
+- #36: `String::Length()` maps to `.size()` in generated smoke code.
+- #38: `AnsiReplaceText(...)` is exposed with a narrow compile-time signature.
+- #42: engine reaches `String::Pos()`, `IntToStr`, `IntToHex`, `AnsiString`, and additional numeric `String(...)` calls.
 
-Run #33: numeric construction such as `String(m)` / `String(m + 1)` is not source-compatible with `std::string`; generated smoke code maps observed forms to `std::to_string(...)`.
+For `Pos`, the generated engine smoke copy uses a helper that preserves Embarcadero semantics: 1-based result, zero when not found. Do not replace it blindly with raw `std::string::find()` semantics.
 
-Run #36: Embarcadero `String::Length()` is mapped to `std::string::size()` in generated smoke code.
-
-Run #38: `PrintBJL()` additionally needs numeric `String(k)` and `AnsiReplaceText(...)`. Numeric construction is mapped to `std::to_string(k)`; compile-only validation exposes a narrow String signature for `AnsiReplaceText()` rather than importing `System.StrUtils.hpp` or prematurely implementing RTL semantics.
-
-Do not introduce a large custom String wrapper until more semantics are mapped. Still watch 1-based indexing, `Pos()`, `SubString()`, case-insensitive helpers, ANSI/Unicode behavior and other RTL conversions.
-
-### Containers
-
-Current STL-backed `TList` shim supports `Count`, `Items[]`, `Add()`, `Clear()`, and `Delete(index)`. Current `TStringList` shim supports `Sorted`, `Count`, `Strings`, `Add()`, and `IndexOf()`.
+Do not introduce a full custom String wrapper until more runtime semantics are known.
 
 ### Core constants trapped in `Main.h`
 
-The compatibility layer now contains only constants reached by tested slices, including the engine additions from run #40:
-
-```text
-cfImport, cfFrame, cfSwitch, cfDSkip, cfPass, cfLoc, cfTry, cfLoop,
-cfFinallyExit, cfSkip,
-ikUnknown, ikFloat, ikLString, ikRecord, ikConstructor, ikDestructor, ikFunc
-```
-
-This increasingly supports a future `CoreTypes.h` / `IdrTypes.h` extraction.
+The compatibility header only grows as tested source demands. By #42 it includes the engine-observed kinds for integer, char, enumeration, float, class, Ansi/Wide/Unicode string families, variant, array, record, Int64, VMT, constructor/destructor, procedure and function, plus the previously mapped analysis flags.
 
 ### `Exception`
 
-The initial `std::runtime_error` wrapper was sufficient until the main engine. Run #40 exposed Borland-style catch/rethrow code that reads `Exception::Message`. The shim now stores a public `String Message` initialized alongside the standard exception base.
+Run #40 exposed Borland `Exception::Message`; the shim stores that public string alongside `std::runtime_error`.
 
 ## `Disasm.cpp`
 
-Real implementation compiles with MSVC x86 after generated portability transforms. Legacy CRT warnings and inline-x86 `ebp` warnings are non-blocking and intentionally not modernized during mapping.
+Real implementation compiles with MSVC x86 after generated portability transforms. Legacy CRT and inline-x86 warnings remain deliberately separate from portability work.
 
 ## `Decompiler.cpp` mapping
 
 ### Primary slice
 
-Starts at `GetString()` and runs through complete `TDecompiler::Init()`.
+`GetString()` through complete `TDecompiler::Init()` — green at #27.
 
-Run #27: fully green.
+### Presentation GUI boundary
 
-### GUI boundary
-
-Immediately after `TDecompiler::Init()` are `OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()`. Direct form output and Embarcadero-specific String behavior make these presentation/orchestration code, so they are intentionally skipped.
+Immediately after `Init()`, `OutputSourceCodeLine()`, `OutputSourceCode()`, and `DecompileProc()` directly use the VCL form and are intentionally excluded from core mapping.
 
 ### BJL / branch-analysis slice
 
-Starts at `TDecompileEnv::GetBJLRange()` and now runs through complete `PrintBJL()`.
-
-Milestones:
-
-- #30 red: missing `BranchGetPrevInstructionType()` declaration.
-- #31 green: complete `GetBJLRange()`.
-- #33 red: numeric `String(int)` mismatch.
-- #34 green: complete `CreateBJLSequence()`.
-- #35 green: complete `UpdateBJLList()` + `BJLAnalyze()`.
-- #36 red: `.Length()` mismatch.
-- #37 green: all non-printing BJL helpers through `ExprMerge()`.
-- #38 green: complete `PrintBJL()`.
-
-This BJL slice is now treated as a stable independently green compile block.
+`GetBJLRange()` through complete `PrintBJL()` — stable green at #38.
 
 ### Main engine slice
 
-The third slice covers complete `TDecompiler::Decompile()` only, ending immediately before `DecompileCaseEnum()`.
+The third slice covers complete `TDecompiler::Decompile()` only, ending before `DecompileCaseEnum()`.
 
-Run #40 hit the MSVC 100-error cap. The errors were highly repetitive and fell into a few dependency families rather than 100 separate portability problems. No VCL symbol appeared in the observed batch.
+#### Run #40
 
-First batch exposed explicitly in the engine generator:
+Hit MSVC's 100-error cap almost entirely on missing core declarations/constants inherited through `Main.h`/`Misc.h`. First batch exposed address/flag helpers, proc/info helpers, decompiler helpers, analysis helpers, Int64 helpers, `Disasm`, `Code`, and `Exception::Message` without importing VCL-heavy headers.
+
+#### Run #42
+
+The first batch worked: compilation progressed much deeper into `Decompile()`. The next failure set still contains many pure analysis/type dependencies, including inline-div/mod/length detection, general-case/Int64 helpers, type/record/array functions, procedure metadata helpers and additional type-kind constants.
+
+New RTL surface in #42:
 
 ```text
-Adr2Pos / Pos2Adr
-Val2Str8
-IsFlagSet / SetFlag / SetFlags / ClearFlag
-GetProcSize / GetInfoRec / GetNearestUpInstruction
-GetDecompilerRegisterName
-InitItem
-IsIntOver / IsExit / IsValidCodeAdr
-SameText
-IsInheritsByProcName / ExtractProcName
-GetDirectCondition / BranchGetPrevInstructionType
-IsInt64ComparisonViaStack1 / IsInt64ComparisonViaStack2
-Disasm / Code
+IntToStr
+IntToHex
+AnsiString
+String::Pos
+additional String(int/DWord) construction
 ```
 
-This is a compile-surface extraction only. Implementations remain in the original source tree and are not duplicated into the smoke harness.
+Most importantly, #42 exposed the first direct UI/interactivity inside the main engine itself.
 
-The `SimulateInstr1()` diagnostic seen in #40 is not yet treated as a real signature bug because it occurred while `Disasm` itself was undeclared; original call sites use the declared two-argument form. Re-evaluate only if the diagnostic survives after dependency declarations are visible.
+##### Embedded procedure policy
+
+Original engine code temporarily changes `FMain_11011981->lbCode->ItemIndex` and calls `Application->MessageBox()` asking whether an embedded procedure should be decompiled.
+
+The generated smoke copy does **not** fake VCL classes. It neutralizes only list-box selection state and maps the confirmation decision to:
+
+```cpp
+bool PortableConfirmEmbeddedProcedure(const String &address);
+```
+
+This is intentionally shaped like the future core boundary. A real headless API should support a deterministic policy such as always/never/callback.
+
+##### Manual input policy
+
+`ManualInput(...)` is also reached by the engine when return-byte counts or function types cannot be inferred. It remains an explicit compile dependency for now. In a real core it should become a resolver callback or deterministic CLI error/policy, not a dialog dependency.
+
+This changes the architecture conclusion slightly: `TDecompiler::Decompile()` is overwhelmingly core analysis, but contains small embedded interaction decisions that must be injected/extracted.
 
 ## Mixed-responsibility headers
 
 ### `Main.h`
 
-Contains both core structs/constants and VCL GUI state. The main-engine dependency batch makes the case for a neutral core definitions header stronger.
+Core flags/kinds and GUI form state coexist. The growing engine constant set is strong evidence for neutral `CoreTypes.h` / `IdrTypes.h`.
 
 ### `Misc.h`
 
-Contains pure analysis helpers alongside `TForm`, `TCanvas`, clipboard and dialog helpers. The engine uses many of those pure helpers without needing the UI half, strengthening the case for a separate core-analysis API header.
+Many pure analysis APIs used by the engine coexist with forms/canvas/dialog helpers. A separate neutral analysis API header is increasingly justified.
 
 ### `TypeInfo2.*`
 
-Contains useful RTTI logic mixed with a VCL form. Later extraction candidates include `Guid2String`, `GetRTTI`, and `GetCppTypeInfo`.
+Useful RTTI logic remains mixed with a VCL form; later extraction candidate.
 
 ## Working rules
 
 - Preserve original source during dependency mapping.
 - Let concrete compiler errors drive shims/transforms.
-- Avoid wholesale container/String rewrites until semantics are mapped.
+- Avoid wholesale String/container rewrites until semantics are mapped.
+- Do not fake VCL merely to make compile smoke green; identify policy/callback boundaries instead.
 - Keep functional portability separate from cleanup/security modernization.
 - Stay x86 first.
-- Do not port the GUI merely to make CI green.
 - No merge to `main` or upstream PR yet.
 
 ## First useful deliverable
-
-Target:
 
 ```text
 idr-cli.exe <target.exe>

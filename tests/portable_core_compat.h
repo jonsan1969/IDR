@@ -13,6 +13,7 @@ using Word = std::uint16_t;
 using DWord = std::uint32_t;
 using String = std::string;
 using AnsiString = std::string;
+using Variant = std::int64_t;
 
 class WideString : public std::wstring {
 public:
@@ -29,6 +30,9 @@ public:
 // Core analysis flags and kinds normally declared in Main.h. Keep only the
 // definitions needed by the portable Decompiler slices here so the test
 // harness does not have to pull in the VCL-heavy Main.h.
+#ifndef cfCode
+#define cfCode 0x00000001
+#endif
 #ifndef cfImport
 #define cfImport 0x00000004
 #endif
@@ -41,6 +45,9 @@ public:
 #ifndef cfSwitch
 #define cfSwitch 0x00000400
 #endif
+#ifndef cfETable
+#define cfETable 0x00001000
+#endif
 #ifndef cfDSkip
 #define cfDSkip 0x00004000
 #endif
@@ -52,6 +59,12 @@ public:
 #endif
 #ifndef cfTry
 #define cfTry 0x01000000
+#endif
+#ifndef cfFinally
+#define cfFinally 0x02000000
+#endif
+#ifndef cfExcept
+#define cfExcept 0x04000000
 #endif
 #ifndef cfLoop
 #define cfLoop 0x08000000
@@ -85,6 +98,9 @@ public:
 #endif
 #ifndef ikClass
 #define ikClass 0x07
+#endif
+#ifndef ikMethod
+#define ikMethod 0x08
 #endif
 #ifndef ikLString
 #define ikLString 0x0A
@@ -182,17 +198,36 @@ public:
     bool Sorted = false;
     int Count = 0;
     std::vector<String> Strings;
+    std::vector<void *> Objects;
 
     int Add(const String &value) {
-        Strings.push_back(value);
-        if (Sorted) std::sort(Strings.begin(), Strings.end());
+        int index;
+        if (Sorted) {
+            auto it = std::lower_bound(Strings.begin(), Strings.end(), value);
+            index = static_cast<int>(it - Strings.begin());
+            Strings.insert(it, value);
+            Objects.insert(Objects.begin() + index, nullptr);
+        } else {
+            Strings.push_back(value);
+            Objects.push_back(nullptr);
+            index = static_cast<int>(Strings.size()) - 1;
+        }
         Count = static_cast<int>(Strings.size());
-        return IndexOf(value);
+        return index;
     }
 
     int IndexOf(const String &value) const {
         auto it = std::find(Strings.begin(), Strings.end(), value);
         return it == Strings.end() ? -1 : static_cast<int>(it - Strings.begin());
+    }
+
+    int IndexOfName(const String &name) const {
+        for (int i = 0; i < Count; ++i) {
+            const auto sep = Strings[i].find('=');
+            const String lhs = sep == String::npos ? Strings[i] : Strings[i].substr(0, sep);
+            if (lhs == name) return i;
+        }
+        return -1;
     }
 };
 

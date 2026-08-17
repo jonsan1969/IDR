@@ -1,10 +1,14 @@
 #include "IdrLegacyBridge.h"
+#include "IdrLegacyCompat.h"
 #include "IdrPeLoader.h"
+#include "../../Disasm.h"
 
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <string>
+
+extern MDisasm Disasm;
 
 namespace {
 
@@ -44,6 +48,21 @@ int wmain(int argc, wchar_t **argv) {
         return 4;
     }
 
+    if (!Disasm.Init()) {
+        std::cerr << "idr-cli: cannot initialize legacy disassembler\n";
+        idr::core::ResetLegacyLoadedPeSession();
+        return 5;
+    }
+
+    DISINFO entryInfo{};
+    char entryLine[1024] = {};
+    const int entryLength = Disasm.Disassemble(session.entryPoint, &entryInfo, entryLine);
+    if (entryLength <= 0 || entryInfo.Mnem[0] == '\0') {
+        std::cerr << "idr-cli: cannot decode entry point\n";
+        idr::core::ResetLegacyLoadedPeSession();
+        return 6;
+    }
+
     std::cout << "IDR portable CLI\n";
     std::cout << "file=" << target.u8string() << '\n';
     PrintHex("image-base", image.imageBase);
@@ -65,6 +84,9 @@ int wmain(int argc, wchar_t **argv) {
                   << '\n';
     }
 
+    std::cout << "entry-instruction-len=" << entryLength << '\n';
+    std::cout << "entry-mnemonic=" << entryInfo.Mnem << '\n';
+    std::cout << "entry-disasm=" << entryLine << '\n';
     std::cout << "legacy-session=bound\n";
     idr::core::ResetLegacyLoadedPeSession();
     return 0;

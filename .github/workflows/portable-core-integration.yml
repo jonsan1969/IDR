@@ -102,7 +102,7 @@ jobs:
         shell: cmd
         run: .\idr-pe-loader-probe.exe
 
-      - name: Link first portable CLI and real PE32 fixture
+      - name: Link portable CLI and real PE32 fixture
         shell: cmd
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
@@ -110,6 +110,11 @@ jobs:
           link /nologo /subsystem:console /out:idr-cli.exe IdrCoreServices.obj IdrImageContext.obj IdrPeLoader.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj IdrDecompilerModel.obj IdrLegacyBridge.obj idr_cli.obj Disasm.portable.obj KnowledgeBase.portable.obj Infos.portable.obj Misc.portable.obj Decompiler.portable.obj || exit /b 1
           link /nologo /subsystem:console /out:idr-cli-fixture.exe idr_cli_fixture.obj || exit /b 1
 
-      - name: Run portable CLI against real MSVC x86 PE32
+      - name: Decode real PE32 entry point through portable CLI
         shell: cmd
-        run: .\idr-cli.exe .\idr-cli-fixture.exe
+        run: |
+          .\idr-cli.exe .\idr-cli-fixture.exe > idr-cli-output.txt || exit /b 1
+          type idr-cli-output.txt
+          findstr /b /c:"entry-instruction-len=" idr-cli-output.txt >nul || exit /b 1
+          findstr /b /c:"entry-mnemonic=" idr-cli-output.txt >nul || exit /b 1
+          findstr /b /c:"entry-disasm=" idr-cli-output.txt >nul || exit /b 1

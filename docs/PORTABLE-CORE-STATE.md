@@ -52,14 +52,15 @@ Coverage includes naming helpers, ITEM manipulation, loop/environment objects, s
 - #33 red: first real Embarcadero `String` semantic mismatch at `String(m)` / `String(m + 1)`.
 - #34 green: complete `CreateBJLSequence()` compiles after the generated smoke copy maps those numeric conversions to `std::to_string(...)`.
 - #35 green: complete `UpdateBJLList()` and complete `BJLAnalyze()` compile with no additional portability shim.
+- #36 red: the expanded non-printing BJL helper block reached `String::Length()`; this is the second compiler-verified Embarcadero String semantic mismatch. No new list, BJL, VCL or compiler blocker was exposed before that point.
 
 Run #34/#35 also confirm the current STL-backed `TList` operations used by the BJL code compile cleanly: `Count`, `Items[]`, `Add()`, `Clear()`, and `Delete(index)`.
 
 ## Current active test
 
-The branch-analysis slice is now extended through the remaining non-printing BJL helpers and stops immediately before `PrintBJL()`.
+The branch-analysis slice remains extended through the remaining non-printing BJL helpers and stops immediately before `PrintBJL()`.
 
-The active span now adds:
+The active span adds:
 
 - `BJLGetIdx()`
 - `BJLCheckPattern1()`
@@ -70,9 +71,11 @@ The active span now adds:
 - `ExprGetOperation()`
 - `ExprMerge()`
 
-Triggering commit: `c299ec9575fcb7355c8703c8f33c378c55092e0f`.
+After #36, the generated smoke copy now maps observed Embarcadero `String::Length()` calls to `std::string::size()` in addition to the earlier numeric `String(int)` -> `std::to_string(...)` transformation.
 
-`PrintBJL()` is intentionally the next separate boundary because it is likely to expose additional Embarcadero String semantics.
+Current triggering commit: `4df1fe7422cc22c39538c86806724ba1834aa5ef`.
+
+`PrintBJL()` remains the next separate boundary because it is likely to expose further String semantics.
 
 If the active run fails, fetch that new failing run log once only, fix the complete batch of errors from that result, and never refetch the same failed log.
 
@@ -88,7 +91,7 @@ If the active run fails, fetch that new failing run log once only, fix the compl
 - standard-C++ `Exception` shim
 - selected core flags/kinds trapped in `Main.h`: `cfImport`, `cfPass`, `cfLoc`, `cfSkip`, `ikFloat`, `ikLString`, `ikRecord`, `ikFunc`
 
-Important: `String = std::string` is only a compile shim, not a semantic replacement. Run #33 proved numeric construction differs. Other Embarcadero semantics still to map include 1-based indexing, `Pos()`, `SubString()`, case-insensitive helpers and Unicode behavior.
+Important: `String = std::string` is only a compile shim, not a semantic replacement. Compiler-verified differences now include numeric `String(int)` construction (#33) and `.Length()` (#36). Other Embarcadero semantics still to map include 1-based indexing, `Pos()`, `SubString()`, case-insensitive helpers and Unicode behavior.
 
 ## Architectural boundaries found
 

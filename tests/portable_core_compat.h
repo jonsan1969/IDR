@@ -18,7 +18,7 @@ using String = std::string;
 #endif
 
 // Core analysis flags and kinds normally declared in Main.h. Keep only the
-// definitions needed by the portable Decompiler slice here so the test
+// definitions needed by the portable Decompiler slices here so the test
 // harness does not have to pull in the VCL-heavy Main.h.
 #ifndef cfImport
 #define cfImport 0x00000004
@@ -28,6 +28,9 @@ using String = std::string;
 #endif
 #ifndef cfLoc
 #define cfLoc 0x00800000
+#endif
+#ifndef cfSkip
+#define cfSkip 0x40000000
 #endif
 #ifndef ikFloat
 #define ikFloat 0x04

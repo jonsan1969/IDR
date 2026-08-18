@@ -1,3 +1,4 @@
+#include "IdrControlFlow.h"
 #include "IdrImageContext.h"
 #include "IdrLegacyBridge.h"
 #include "IdrLegacyProcedureAdapter.h"
@@ -138,50 +139,95 @@ int main() {
     if (session.analysisSize != 0x2000 || !session.flags || !session.infos || !session.code) return 23;
     if (session.code != image.bytes.data() || session.code[0] != 0x90 || session.code[0x1002] != 0x2A) return 24;
     if (session.flags[0] != 0 || session.infos[0] != nullptr) return 25;
-    if (!idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::Code, 0)) return 26;
-    if ((session.flags[0] & idr::core::CodeFlags::Code) == 0) return 27;
 
-    idr::core::ProcedurePrototypeMetadata prototype;
-    prototype.kind = ikFunc;
-    prototype.returnType = "Integer";
-    prototype.flags = PF_BPBASED | 1u;
-    prototype.bpBase = 8;
-    prototype.retBytes = 4;
-    prototype.stackSize = 64;
-    prototype.arguments.push_back({0x21, true, 0, 4, "Value", "Integer"});
-    prototype.arguments.push_back({0x22, false, 8, 4, "Other", "Pointer"});
-    prototype.locals.push_back({-4, 4, "Temp", "Integer"});
+    constexpr idr::core::DWord kTarget = 0x00401010u;
+    const idr::core::InstructionDecoder decoder = [](idr::core::DWord address,
+                                                       idr::core::DecodedInstruction &decoded) {
+        constexpr idr::core::DWord entry = 0x00401000u;
+        constexpr idr::core::DWord target = 0x00401010u;
+        decoded = {};
+        switch (address) {
+            case entry:
+                decoded = {5, "call", "call Target", true, false, false, false, target};
+                return true;
+            case entry + 5:
+                decoded = {1, "ret", "ret", false, false, false, true, 0};
+                return true;
+            case target:
+                decoded = {1, "ret", "ret", false, false, false, true, 0};
+                return true;
+            default:
+                return false;
+        }
+    };
+    const idr::core::AddressMapper mapper = [](idr::core::DWord address) {
+        return idr::core::AddressToOffset(address);
+    };
 
-    idr::core::LegacyProcedureMetadataSeed seed;
-    if (!idr::core::BuildLegacyProcedureMetadataSeed(prototype, ikFunc, seed)) return 28;
-    if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(image.entryPoint, seed)) return 29;
+    idr::core::ControlFlowResult flow;
+    if (!idr::core::AnalyzeBoundedControlFlow(image.entryPoint,
+                                               idr::core::LegacyAnalysisState(),
+                                               decoder,
+                                               mapper,
+                                               {},
+                                               flow))
+        return 26;
+    if (flow.procedures.size() != 2 || flow.candidates.size() != 1 ||
+        flow.procedures[0].address != image.entryPoint || flow.procedures[1].address != kTarget)
+        return 27;
+
+    std::size_t providerCalls = 0;
+    const idr::core::LegacyProcedurePrototypeProvider provider =
+        [&](const idr::core::ProcedureSummary &summary, idr::core::ProcedurePrototypeMetadata &metadata) {
+            ++providerCalls;
+            if (summary.address != image.entryPoint && summary.address != kTarget) return false;
+            metadata.kind = ikProc;
+            return true;
+        };
+
+    std::vector<idr::core::DWord> installed;
+    if (!idr::core::ApplyDiscoveredProceduresToActiveLegacySession(flow, ikFunc, provider, &installed)) return 28;
+    if (providerCalls != 2 || installed.size() != 2 ||
+        installed[0] != image.entryPoint || installed[1] != kTarget)
+        return 29;
 
     const auto seededSession = idr::core::GetLegacyImageSessionView();
-    if (!seededSession.infos || !seededSession.infos[0]) return 30;
-    PInfoRec record = static_cast<PInfoRec>(seededSession.infos[0]);
-    if (!record || record->kind != ikFunc || record->type != "Integer" || !record->procInfo) return 31;
-    if (record->procInfo->flags != prototype.flags || record->procInfo->bpBase != 8 ||
-        record->procInfo->retBytes != 4 || record->procInfo->stackSize != 64 ||
-        record->procInfo->procSize != 0) return 32;
-    if (!record->procInfo->args || record->procInfo->args->Count != 2) return 33;
-    PARGINFO firstArg = record->procInfo->GetArg(0);
-    PARGINFO secondArg = record->procInfo->GetArg(1);
-    if (!firstArg || !secondArg || !firstArg->Register || secondArg->Register ||
-        firstArg->Ndx != 0 || secondArg->Ndx != 8 ||
-        firstArg->TypeDef != "Integer" || secondArg->TypeDef != "Pointer") return 34;
-    PLOCALINFO local = record->procInfo->GetLocal(-4);
-    if (!local || local->Name != "Temp" || local->TypeDef != "Integer") return 35;
-    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(image.entryPoint, seed)) return 36;
-    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(0x00402010, seed)) return 37;
-    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(0x00600000, seed)) return 38;
-    if ((seededSession.flags[0] & idr::core::CodeFlags::ProcStart) != 0) return 39;
+    if (!seededSession.infos || !seededSession.infos[0] || !seededSession.infos[0x10]) return 30;
+    PInfoRec entryRecord = static_cast<PInfoRec>(seededSession.infos[0]);
+    PInfoRec targetRecord = static_cast<PInfoRec>(seededSession.infos[0x10]);
+    if (!entryRecord || !targetRecord || entryRecord->kind != ikProc || targetRecord->kind != ikProc ||
+        !entryRecord->procInfo || !targetRecord->procInfo)
+        return 31;
+    if (entryRecord->procInfo->procSize != 0 || targetRecord->procInfo->procSize != 0 ||
+        entryRecord->procInfo->args || entryRecord->procInfo->locals ||
+        targetRecord->procInfo->args || targetRecord->procInfo->locals)
+        return 32;
+
+    const auto requiredProcFlags = idr::core::CodeFlags::ProcStart |
+                                   idr::core::CodeFlags::Instruction |
+                                   idr::core::CodeFlags::Code;
+    if ((seededSession.flags[0] & requiredProcFlags) != requiredProcFlags ||
+        (seededSession.flags[0x10] & requiredProcFlags) != requiredProcFlags)
+        return 33;
+
+    providerCalls = 0;
+    std::vector<idr::core::DWord> rejectedInstall;
+    if (idr::core::ApplyDiscoveredProceduresToActiveLegacySession(flow, ikFunc, provider, &rejectedInstall)) return 34;
+    if (providerCalls != 1 || !rejectedInstall.empty()) return 35;
+
+    idr::core::ProcedurePrototypeMetadata minimalPrototype;
+    minimalPrototype.kind = ikProc;
+    idr::core::LegacyProcedureMetadataSeed directSeed;
+    if (!idr::core::BuildLegacyProcedureMetadataSeed(minimalPrototype, ikFunc, directSeed)) return 36;
+    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(0x00402010, directSeed)) return 37;
+    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(0x00600000, directSeed)) return 38;
 
     idr::core::ResetLegacyLoadedPeSession();
     const auto reset = idr::core::GetLegacyImageSessionView();
-    if (reset.entryPoint || reset.imageBase || reset.imageSize || reset.totalSize || reset.codeBase || reset.codeSize) return 40;
-    if (reset.analysisSize != 0 || reset.flags || reset.infos || reset.code) return 41;
-    if (idr::core::GetImageView().data != nullptr || !idr::core::GetImageSegments().empty()) return 42;
+    if (reset.entryPoint || reset.imageBase || reset.imageSize || reset.totalSize || reset.codeBase || reset.codeSize) return 39;
+    if (reset.analysisSize != 0 || reset.flags || reset.infos || reset.code) return 40;
+    if (idr::core::GetImageView().data != nullptr || !idr::core::GetImageSegments().empty()) return 41;
 
-    std::cout << "portable PE32 session probe: base=00400000 entry=00401000 packed=0x2000 legacy-state=bound legacy-procedure-slot=seeded\n";
+    std::cout << "portable PE32 session probe: base=00400000 entry=00401000 packed=0x2000 legacy-state=bound cfg-procedure-slots=2\n";
     return 0;
 }

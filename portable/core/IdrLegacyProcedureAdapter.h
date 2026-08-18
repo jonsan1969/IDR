@@ -5,6 +5,10 @@
 #include "IdrLegacyBridge.h"
 #include "IdrImageContext.h"
 
+#include <functional>
+#include <utility>
+#include <vector>
+
 extern PInfoRec *Infos;
 
 namespace idr::core {
@@ -69,6 +73,78 @@ inline bool ApplyLegacyProcedureMetadataSeedToActiveSession(DWord address,
     }
 
     Infos[pos] = record;
+    return true;
+}
+
+using LegacyProcedurePrototypeProvider =
+    std::function<bool(const ProcedureSummary &, ProcedurePrototypeMetadata &)>;
+
+// Materialize every procedure already discovered by the portable CFG into the
+// active legacy Infos[] session. Procedure addresses come only from the CFG;
+// prototype/kind data is supplied explicitly by the caller. All procedures are
+// preflighted before publication. If a later write fails, records installed by
+// this batch are removed again. procSize is still never inferred from observedSpan.
+inline bool ApplyDiscoveredProceduresToActiveLegacySession(
+    const ControlFlowResult &flow,
+    Byte functionKind,
+    const LegacyProcedurePrototypeProvider &provider,
+    std::vector<DWord> *installedAddresses = nullptr) {
+    if (installedAddresses) installedAddresses->clear();
+    if (!provider || flow.procedures.empty()) return false;
+
+    const auto session = GetLegacyImageSessionView();
+    if (!Infos || !session.infos ||
+        session.infos != reinterpret_cast<void *const *>(Infos))
+        return false;
+
+    struct PreparedProcedure {
+        DWord address = 0;
+        std::size_t pos = 0;
+        LegacyProcedureMetadataSeed seed;
+    };
+
+    std::vector<PreparedProcedure> prepared;
+    prepared.reserve(flow.procedures.size());
+    std::vector<std::size_t> seenPositions;
+    seenPositions.reserve(flow.procedures.size());
+
+    for (const auto &summary : flow.procedures) {
+        ProcedurePrototypeMetadata metadata;
+        if (!provider(summary, metadata)) return false;
+
+        LegacyProcedureMetadataSeed seed;
+        if (!BuildLegacyProcedureMetadataSeed(metadata, functionKind, seed)) return false;
+
+        const int offset = AddressToOffset(summary.address);
+        if (offset < 0) return false;
+        const auto pos = static_cast<std::size_t>(offset);
+        if (pos >= session.analysisSize || pos >= static_cast<std::size_t>(session.totalSize)) return false;
+        if (Infos[pos]) return false;
+        for (const auto seen : seenPositions)
+            if (seen == pos) return false;
+
+        seenPositions.push_back(pos);
+        prepared.push_back({summary.address, pos, std::move(seed)});
+    }
+
+    std::vector<DWord> installed;
+    installed.reserve(prepared.size());
+    for (const auto &procedure : prepared) {
+        if (!ApplyLegacyProcedureMetadataSeedToActiveSession(procedure.address, procedure.seed)) {
+            for (const auto address : installed) {
+                const int rollbackOffset = AddressToOffset(address);
+                if (rollbackOffset < 0) continue;
+                const auto rollbackPos = static_cast<std::size_t>(rollbackOffset);
+                if (rollbackPos >= session.analysisSize) continue;
+                delete Infos[rollbackPos];
+                Infos[rollbackPos] = nullptr;
+            }
+            return false;
+        }
+        installed.push_back(procedure.address);
+    }
+
+    if (installedAddresses) *installedAddresses = std::move(installed);
     return true;
 }
 

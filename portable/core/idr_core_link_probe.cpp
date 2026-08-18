@@ -5,11 +5,13 @@
 #include "IdrImageContext.h"
 #include "IdrInstructionNav.h"
 #include "IdrLegacyProcedureAdapter.h"
+#include "IdrPeLoader.h"
 
 #include <array>
 #include <iostream>
 
 #include "../../Disasm.h"
+#include "../../tests/generated/Decompiler.portable.h"
 
 int main() {
     const auto services = idr::core::MakeHeadlessServices();
@@ -167,6 +169,39 @@ int main() {
     if (rejected.kind != 0 || !rejected.returnType.empty() ||
         !rejected.arguments.empty() || !rejected.locals.empty()) return 67;
 
+    constexpr idr::core::DWord kPreflightAddress = 0x00403000u;
+    idr::core::LoadedPeImage preflightImage;
+    preflightImage.bytes.assign(4, 0x90);
+    preflightImage.bytes[0] = 0xC3;
+    preflightImage.segments.push_back({kPreflightAddress, preflightImage.bytes.size(), 0});
+    preflightImage.imageBase = 0x00400000u;
+    preflightImage.imageSize = 0x4000u;
+    preflightImage.entryPoint = kPreflightAddress;
+    preflightImage.codeBase = kPreflightAddress;
+    preflightImage.codeSize = static_cast<idr::core::DWord>(preflightImage.bytes.size());
+    idr::core::ActivateLegacyLoadedPeSession(preflightImage);
+
+    idr::core::ProcedurePrototypeMetadata preflightPrototype;
+    preflightPrototype.kind = ikProc;
+    idr::core::LegacyProcedureMetadataSeed preflightSeed;
+    if (!idr::core::BuildLegacyProcedureMetadataSeed(preflightPrototype, ikFunc, preflightSeed)) return 68;
+    if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(kPreflightAddress, preflightSeed)) return 69;
+    const auto preflightSession = idr::core::GetLegacyImageSessionView();
+    if (!preflightSession.infos || !preflightSession.infos[0]) return 70;
+    PInfoRec preflightRecord = static_cast<PInfoRec>(preflightSession.infos[0]);
+    if (!preflightRecord || !preflightRecord->procInfo || preflightRecord->procInfo->procSize != 0) return 71;
+
+    preflightRecord->procInfo->procSize = 1;
+    TDecompileEnv environment(kPreflightAddress, preflightRecord->procInfo->procSize, preflightRecord);
+    if (environment.StartAdr != kPreflightAddress || environment.Size != 1 ||
+        environment.StackSize != 0x8000u || environment.BpBased)
+        return 72;
+    TDecompiler legacyDecompiler(&environment);
+    if (!legacyDecompiler.Init(kPreflightAddress)) return 73;
+    legacyDecompiler.InitFlags();
+    if (preflightRecord->procInfo->procSize != 1) return 74;
+    idr::core::ResetLegacyLoadedPeSession();
+
     const auto op = disasm.GetOp(const_cast<char *>("mov"));
     std::cout << "portable-core link probe: OP_MOV=" << static_cast<int>(op)
               << ", decompiler-condition=" << idr::core::DirectCondition('E')
@@ -174,6 +209,7 @@ int main() {
               << ", fs=" << idr::core::GetNearestUpPrefixFs(decoded, disasm, 8)
               << ", segmented=00402002->6"
               << ", legacy-procedure-seed=ok"
-              << ", legacy-prototype-roundtrip=ok\n";
-    return op == OP_MOV ? 0 : 68;
+              << ", legacy-prototype-roundtrip=ok"
+              << ", legacy-decompiler-preflight=ok\n";
+    return op == OP_MOV ? 0 : 75;
 }

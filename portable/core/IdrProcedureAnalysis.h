@@ -57,6 +57,66 @@ inline bool IsProcedurePrototypeComplete(const ProcedurePrototypeMetadata &metad
     return true;
 }
 
+// Explicit value-only bridge toward the legacy InfoRec/InfoProcInfo surface.
+// These field names intentionally mirror the legacy concepts, but no legacy
+// object is allocated or mutated here. procSize remains deliberately absent.
+struct LegacyProcedureArgumentSeed {
+    Byte tag = 0;
+    bool registerArgument = false;
+    int ndx = 0;
+    int size = 0;
+    std::string name;
+    std::string typeDef;
+};
+
+struct LegacyProcedureLocalSeed {
+    int ofs = 0;
+    int size = 0;
+    std::string name;
+    std::string typeDef;
+};
+
+struct LegacyProcedureMetadataSeed {
+    Byte kind = 0;
+    std::string returnType;
+    DWord flags = 0;
+    Word bpBase = 0;
+    Word retBytes = 0;
+    int stackSize = 0;
+    std::vector<LegacyProcedureArgumentSeed> arguments;
+    std::vector<LegacyProcedureLocalSeed> locals;
+};
+
+inline bool BuildLegacyProcedureMetadataSeed(const ProcedurePrototypeMetadata &metadata,
+                                             Byte functionKind,
+                                             LegacyProcedureMetadataSeed &seed) {
+    seed = {};
+    if (!IsProcedurePrototypeComplete(metadata, functionKind)) return false;
+
+    seed.kind = metadata.kind;
+    seed.returnType = metadata.returnType;
+    seed.flags = metadata.flags;
+    seed.bpBase = metadata.bpBase;
+    seed.retBytes = metadata.retBytes;
+    seed.stackSize = metadata.stackSize;
+
+    seed.arguments.reserve(metadata.arguments.size());
+    for (const auto &argument : metadata.arguments) {
+        seed.arguments.push_back({argument.tag,
+                                  argument.inRegister,
+                                  argument.index,
+                                  argument.size,
+                                  argument.name,
+                                  argument.type});
+    }
+
+    seed.locals.reserve(metadata.locals.size());
+    for (const auto &local : metadata.locals) {
+        seed.locals.push_back({local.offset, local.size, local.name, local.type});
+    }
+    return true;
+}
+
 inline bool BuildProcedureAnalysisInput(const ControlFlowResult &result,
                                         DWord procedureAddress,
                                         ProcedureAnalysisInput &input) {

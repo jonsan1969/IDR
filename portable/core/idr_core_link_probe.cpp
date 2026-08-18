@@ -139,12 +139,41 @@ int main() {
     if (!local || local->Name != "Temp" || local->TypeDef != "Integer") return 59;
     if (idr::core::ApplyLegacyProcedureMetadataSeed(legacyRecord, seed)) return 60;
 
+    idr::core::ProcedurePrototypeMetadata captured;
+    if (!idr::core::CaptureLegacyProcedurePrototypeMetadata(legacyRecord, captured)) return 61;
+    if (captured.kind != prototype.kind || captured.returnType != prototype.returnType ||
+        captured.flags != prototype.flags || captured.bpBase != prototype.bpBase ||
+        captured.retBytes != prototype.retBytes || captured.stackSize != prototype.stackSize ||
+        captured.arguments.size() != prototype.arguments.size() ||
+        captured.locals.size() != prototype.locals.size()) return 62;
+    for (std::size_t i = 0; i < prototype.arguments.size(); ++i) {
+        const auto &expected = prototype.arguments[i];
+        const auto &actual = captured.arguments[i];
+        if (actual.tag != expected.tag || actual.inRegister != expected.inRegister ||
+            actual.index != expected.index || actual.size != expected.size ||
+            actual.name != expected.name || actual.type != expected.type) return 63;
+    }
+    for (std::size_t i = 0; i < prototype.locals.size(); ++i) {
+        const auto &expected = prototype.locals[i];
+        const auto &actual = captured.locals[i];
+        if (actual.offset != expected.offset || actual.size != expected.size ||
+            actual.name != expected.name || actual.type != expected.type) return 64;
+    }
+    if (legacyRecord.procInfo->procSize != 77) return 65;
+
+    InfoRec nonProcedure(-1, ikInteger);
+    idr::core::ProcedurePrototypeMetadata rejected;
+    if (idr::core::CaptureLegacyProcedurePrototypeMetadata(nonProcedure, rejected)) return 66;
+    if (rejected.kind != 0 || !rejected.returnType.empty() ||
+        !rejected.arguments.empty() || !rejected.locals.empty()) return 67;
+
     const auto op = disasm.GetOp(const_cast<char *>("mov"));
     std::cout << "portable-core link probe: OP_MOV=" << static_cast<int>(op)
               << ", decompiler-condition=" << idr::core::DirectCondition('E')
               << ", name=" << idr::core::DefaultProcName(0x401000)
               << ", fs=" << idr::core::GetNearestUpPrefixFs(decoded, disasm, 8)
               << ", segmented=00402002->6"
-              << ", legacy-procedure-seed=ok\n";
-    return op == OP_MOV ? 0 : 61;
+              << ", legacy-procedure-seed=ok"
+              << ", legacy-prototype-roundtrip=ok\n";
+    return op == OP_MOV ? 0 : 68;
 }

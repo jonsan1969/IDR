@@ -31,16 +31,51 @@ int main() {
 
     idr::core::LegacyDecompilerPreflightResult preflight;
     if (idr::core::PreflightActiveLegacyProcedure(kAddress, preflight)) return 5;
-    if (preflight.initialized || preflight.procedureSize != 0 || preflight.stackSize != 0) return 6;
+    if (preflight.initialized || preflight.procedureSize != 0 ||
+        preflight.procedureSizeSource != idr::core::ProcedureSizeSource::None ||
+        preflight.stackSize != 0)
+        return 6;
 
-    record->procInfo->procSize = 1;
-    if (!idr::core::PreflightActiveLegacyProcedure(kAddress, preflight)) return 7;
-    if (!preflight.initialized || preflight.procedureSize != 1 ||
+    std::size_t resolverCalls = 0;
+    const idr::core::HeadlessProcedureSizeResolver resolver =
+        [&](const idr::core::ProcedureSizeResolutionRequest &request) {
+            ++resolverCalls;
+            idr::core::ProcedureSizeResolutionResult result;
+            if (request.procedureAddress != kAddress || request.storedSize != 0)
+                return result;
+            result.status = idr::core::ProcedureSizeResolutionStatus::Resolved;
+            result.size = 1;
+            return result;
+        };
+
+    if (!idr::core::PreflightActiveLegacyProcedure(kAddress, preflight, resolver)) return 7;
+    if (resolverCalls != 1 || !preflight.initialized || preflight.procedureSize != 1 ||
+        preflight.procedureSizeSource != idr::core::ProcedureSizeSource::HeadlessResolver ||
         preflight.stackSize != 0x8000u || preflight.bpBased)
         return 8;
-    if (record->procInfo->procSize != 1) return 9;
+    if (record->procInfo->procSize != 0) return 9;
+
+    record->procInfo->procSize = 1;
+    resolverCalls = 0;
+    if (!idr::core::PreflightActiveLegacyProcedure(kAddress, preflight, resolver)) return 10;
+    if (resolverCalls != 0 || !preflight.initialized || preflight.procedureSize != 1 ||
+        preflight.procedureSizeSource != idr::core::ProcedureSizeSource::LegacyMetadata ||
+        preflight.stackSize != 0x8000u || preflight.bpBased)
+        return 11;
+    if (record->procInfo->procSize != 1) return 12;
+
+    const idr::core::HeadlessProcedureSizeResolver unavailable =
+        [](const idr::core::ProcedureSizeResolutionRequest &) {
+            return idr::core::ProcedureSizeResolutionResult{};
+        };
+    record->procInfo->procSize = 0;
+    if (idr::core::PreflightActiveLegacyProcedure(kAddress, preflight, unavailable)) return 13;
+    if (preflight.initialized || preflight.procedureSize != 0 ||
+        preflight.procedureSizeSource != idr::core::ProcedureSizeSource::None)
+        return 14;
 
     idr::core::ResetLegacyLoadedPeSession();
     std::cout << "legacy-decompiler-runner-preflight=ok\n";
+    std::cout << "headless-procedure-size-policy=ok\n";
     return 0;
 }

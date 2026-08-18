@@ -7,8 +7,10 @@
 
 namespace idr::core {
 
-bool PreflightActiveLegacyProcedure(DWord address,
-                                    LegacyDecompilerPreflightResult &result) {
+bool PreflightActiveLegacyProcedure(
+    DWord address,
+    LegacyDecompilerPreflightResult &result,
+    const HeadlessProcedureSizeResolver &sizeResolver) {
     result = {};
 
     const auto session = GetLegacyImageSessionView();
@@ -24,14 +26,20 @@ bool PreflightActiveLegacyProcedure(DWord address,
     PInfoRec record = Infos[pos];
     if (!record || record->kind < ikRefine || record->kind > ikFunc || !record->procInfo)
         return false;
-    if (record->procInfo->procSize <= 0) return false;
 
-    TDecompileEnv environment(address, record->procInfo->procSize, record);
+    ProcedureSizeResolutionRequest sizeRequest;
+    sizeRequest.procedureAddress = address;
+    sizeRequest.storedSize = record->procInfo->procSize;
+    ResolvedProcedureSize resolvedSize;
+    if (!ResolveProcedureSize(sizeRequest, sizeResolver, resolvedSize)) return false;
+
+    TDecompileEnv environment(address, resolvedSize.size, record);
     TDecompiler decompiler(&environment);
     if (!decompiler.Init(address)) return false;
     decompiler.InitFlags();
 
     result.procedureSize = environment.Size;
+    result.procedureSizeSource = resolvedSize.source;
     result.stackSize = environment.StackSize;
     result.bpBased = environment.BpBased;
     result.initialized = true;

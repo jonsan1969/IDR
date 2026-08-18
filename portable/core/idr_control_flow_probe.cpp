@@ -276,10 +276,55 @@ bool RunRichGraphFixture() {
     return true;
 }
 
+bool RunPrototypeMetadataFixture() {
+    constexpr Byte kProcedureKind = 1;
+    constexpr Byte kFunctionKind = 2;
+
+    ProcedurePrototypeMetadata procedure;
+    procedure.kind = kProcedureKind;
+    if (!IsProcedurePrototypeComplete(procedure, kFunctionKind)) return false;
+
+    ProcedurePrototypeMetadata function;
+    function.kind = kFunctionKind;
+    if (IsProcedurePrototypeComplete(function, kFunctionKind)) return false;
+    function.returnType = "Integer";
+    if (!IsProcedurePrototypeComplete(function, kFunctionKind)) return false;
+
+    ProcedureArgumentMetadata argument;
+    argument.tag = 0x21;
+    argument.inRegister = true;
+    argument.index = 0;
+    argument.size = 4;
+    argument.name = "Value";
+    procedure.arguments.push_back(argument);
+    if (IsProcedurePrototypeComplete(procedure, kFunctionKind)) return false;
+
+    procedure.arguments[0].type = "Integer";
+    if (!IsProcedurePrototypeComplete(procedure, kFunctionKind)) return false;
+
+    ProcedureArgumentMetadata secondArgument;
+    secondArgument.tag = 0x22;
+    secondArgument.inRegister = false;
+    secondArgument.index = 8;
+    secondArgument.size = 4;
+    secondArgument.name = "Other";
+    secondArgument.type = "Pointer";
+    procedure.arguments.push_back(secondArgument);
+    if (!IsProcedurePrototypeComplete(procedure, kFunctionKind)) return false;
+
+    procedure.arguments[1].type.clear();
+    if (IsProcedurePrototypeComplete(procedure, kFunctionKind)) return false;
+
+    std::cout << "procedure-prototype-metadata=ok\n";
+    std::cout << "procedure-argument-count=" << procedure.arguments.size() << '\n';
+    return true;
+}
+
 } // namespace
 
 int main() {
     if (!RunEstablishedFixture()) return 1;
     if (!RunRichGraphFixture()) return 2;
+    if (!RunPrototypeMetadataFixture()) return 3;
     return 0;
 }

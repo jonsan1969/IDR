@@ -97,7 +97,7 @@ jobs:
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          link /nologo /subsystem:console /out:idr-control-flow-probe.exe IdrImageContext.obj IdrAnalysisState.obj idr_control_flow_probe.obj || exit /b 1
+          link /nologo /subsystem:console /out:idr-control-flow-probe.exe IdrAnalysisState.obj idr_control_flow_probe.obj || exit /b 1
 
       - name: Run neutral control-flow probe
         shell: cmd

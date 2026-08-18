@@ -87,10 +87,32 @@ int main() {
         preflight.procedureSizeSource != idr::core::ProcedureSizeSource::None)
         return 17;
 
+    // First controlled execution of the real legacy decompiler loop.
+    // The one-byte fixture is RET only, so no interactive path should be reached.
+    record->procInfo->procSize = 1;
+    std::size_t manualInputCalls = 0;
+    auto services = idr::core::MakeHeadlessServices();
+    services.manualInput = [&](idr::core::DWord, idr::core::DWord,
+                               const std::string &, const std::string &)
+        -> std::optional<std::string> {
+        ++manualInputCalls;
+        return std::nullopt;
+    };
+    idr::core::SetLegacyServices(&services);
+
+    idr::core::LegacyDecompilerRunResult run;
+    if (!idr::core::DecompileActiveLegacyProcedure(kAddress, run)) return 18;
+    if (!run.decompiled || !run.wasRet || run.procedureSize != 1 ||
+        run.procedureSizeSource != idr::core::ProcedureSizeSource::LegacyMetadata)
+        return 19;
+    if (manualInputCalls != 0) return 20;
+    if (record->procInfo->procSize != 1) return 21;
+
     idr::core::ResetLegacyLoadedPeSession();
-    if (idr::core::LegacyProcedureSizeResolver()) return 18;
+    if (idr::core::LegacyProcedureSizeResolver()) return 22;
     std::cout << "legacy-decompiler-runner-preflight=ok\n";
     std::cout << "headless-procedure-size-policy=ok\n";
     std::cout << "legacy-procedure-size-bridge=ok\n";
+    std::cout << "legacy-decompiler-decompile=ok\n";
     return 0;
 }

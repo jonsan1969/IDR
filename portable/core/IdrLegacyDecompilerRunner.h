@@ -13,9 +13,22 @@ struct LegacyDecompilerPreflightResult {
     bool initialized = false;
 };
 
+struct LegacyDecompilerRunResult {
+    int procedureSize = 0;
+    ProcedureSizeSource procedureSizeSource = ProcedureSizeSource::None;
+    DWord endAddress = 0;
+    bool wasRet = false;
+    bool decompiled = false;
+};
+
 bool PreflightActiveLegacyProcedure(
     DWord address,
     LegacyDecompilerPreflightResult &result,
+    const HeadlessProcedureSizeResolver &sizeResolver = {});
+
+bool DecompileActiveLegacyProcedure(
+    DWord address,
+    LegacyDecompilerRunResult &result,
     const HeadlessProcedureSizeResolver &sizeResolver = {});
 
 } // namespace idr::core

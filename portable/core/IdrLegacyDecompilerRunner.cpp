@@ -6,12 +6,15 @@
 #include "Decompiler.portable.h"
 
 namespace idr::core {
+namespace {
 
-bool PreflightActiveLegacyProcedure(
+bool ResolveActiveLegacyProcedure(
     DWord address,
-    LegacyDecompilerPreflightResult &result,
-    const HeadlessProcedureSizeResolver &sizeResolver) {
-    result = {};
+    const HeadlessProcedureSizeResolver &sizeResolver,
+    PInfoRec &record,
+    ResolvedProcedureSize &resolvedSize) {
+    record = nullptr;
+    resolvedSize = {};
 
     const auto session = GetLegacyImageSessionView();
     if (!Infos || !session.infos ||
@@ -23,16 +26,28 @@ bool PreflightActiveLegacyProcedure(
     const auto pos = static_cast<std::size_t>(offset);
     if (pos >= session.analysisSize || pos >= static_cast<std::size_t>(session.totalSize)) return false;
 
-    PInfoRec record = Infos[pos];
+    record = Infos[pos];
     if (!record || record->kind < ikRefine || record->kind > ikFunc || !record->procInfo)
         return false;
 
     ProcedureSizeResolutionRequest sizeRequest;
     sizeRequest.procedureAddress = address;
     sizeRequest.storedSize = record->procInfo->procSize;
-    ResolvedProcedureSize resolvedSize;
     const auto &effectiveResolver = sizeResolver ? sizeResolver : LegacyProcedureSizeResolver();
-    if (!ResolveProcedureSize(sizeRequest, effectiveResolver, resolvedSize)) return false;
+    return ResolveProcedureSize(sizeRequest, effectiveResolver, resolvedSize);
+}
+
+} // namespace
+
+bool PreflightActiveLegacyProcedure(
+    DWord address,
+    LegacyDecompilerPreflightResult &result,
+    const HeadlessProcedureSizeResolver &sizeResolver) {
+    result = {};
+
+    PInfoRec record = nullptr;
+    ResolvedProcedureSize resolvedSize;
+    if (!ResolveActiveLegacyProcedure(address, sizeResolver, record, resolvedSize)) return false;
 
     TDecompileEnv environment(address, resolvedSize.size, record);
     TDecompiler decompiler(&environment);
@@ -44,6 +59,32 @@ bool PreflightActiveLegacyProcedure(
     result.stackSize = environment.StackSize;
     result.bpBased = environment.BpBased;
     result.initialized = true;
+    return true;
+}
+
+bool DecompileActiveLegacyProcedure(
+    DWord address,
+    LegacyDecompilerRunResult &result,
+    const HeadlessProcedureSizeResolver &sizeResolver) {
+    result = {};
+
+    PInfoRec record = nullptr;
+    ResolvedProcedureSize resolvedSize;
+    if (!ResolveActiveLegacyProcedure(address, sizeResolver, record, resolvedSize)) return false;
+
+    TDecompileEnv environment(address, resolvedSize.size, record);
+    TDecompiler decompiler(&environment);
+    if (!decompiler.Init(address)) return false;
+    decompiler.InitFlags();
+    decompiler.SetStop(address + static_cast<DWord>(resolvedSize.size));
+
+    const DWord endAddress = decompiler.Decompile(address, 0, nullptr);
+
+    result.procedureSize = environment.Size;
+    result.procedureSizeSource = resolvedSize.source;
+    result.endAddress = endAddress;
+    result.wasRet = decompiler.WasRet;
+    result.decompiled = true;
     return true;
 }
 

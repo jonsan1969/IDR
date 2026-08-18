@@ -95,6 +95,33 @@ bool BuildSyntheticPe32(const std::filesystem::path &path) {
     return static_cast<bool>(out);
 }
 
+bool SamePrototype(const idr::core::ProcedurePrototypeMetadata &expected,
+                   const idr::core::ProcedurePrototypeMetadata &actual) {
+    if (actual.kind != expected.kind || actual.returnType != expected.returnType ||
+        actual.flags != expected.flags || actual.bpBase != expected.bpBase ||
+        actual.retBytes != expected.retBytes || actual.stackSize != expected.stackSize ||
+        actual.arguments.size() != expected.arguments.size() ||
+        actual.locals.size() != expected.locals.size())
+        return false;
+
+    for (std::size_t i = 0; i < expected.arguments.size(); ++i) {
+        const auto &left = expected.arguments[i];
+        const auto &right = actual.arguments[i];
+        if (right.tag != left.tag || right.inRegister != left.inRegister ||
+            right.index != left.index || right.size != left.size ||
+            right.name != left.name || right.type != left.type)
+            return false;
+    }
+    for (std::size_t i = 0; i < expected.locals.size(); ++i) {
+        const auto &left = expected.locals[i];
+        const auto &right = actual.locals[i];
+        if (right.offset != left.offset || right.size != left.size ||
+            right.name != left.name || right.type != left.type)
+            return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -176,58 +203,91 @@ int main() {
         flow.procedures[0].address != image.entryPoint || flow.procedures[1].address != kTarget)
         return 27;
 
+    idr::core::ProcedurePrototypeMetadata knownEntry;
+    knownEntry.kind = ikFunc;
+    knownEntry.returnType = "Integer";
+    knownEntry.flags = PF_BPBASED | 1u;
+    knownEntry.bpBase = 8;
+    knownEntry.retBytes = 4;
+    knownEntry.stackSize = 64;
+    knownEntry.arguments.push_back({0x21, true, 0, 4, "Value", "Integer"});
+    knownEntry.arguments.push_back({0x22, false, 8, 4, "Other", "Pointer"});
+    knownEntry.locals.push_back({-4, 4, "Temp", "Integer"});
+
+    idr::core::LegacyProcedureMetadataSeed knownSeed;
+    if (!idr::core::BuildLegacyProcedureMetadataSeed(knownEntry, ikFunc, knownSeed)) return 28;
+    if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(image.entryPoint, knownSeed)) return 29;
+    const auto knownSession = idr::core::GetLegacyImageSessionView();
+    PInfoRec knownEntryRecord = static_cast<PInfoRec>(knownSession.infos[0]);
+    if (!knownEntryRecord || !knownEntryRecord->procInfo) return 30;
+    knownEntryRecord->procInfo->procSize = 77;
+
     std::size_t providerCalls = 0;
     const idr::core::LegacyProcedurePrototypeProvider provider =
         [&](const idr::core::ProcedureSummary &summary, idr::core::ProcedurePrototypeMetadata &metadata) {
             ++providerCalls;
-            if (summary.address != image.entryPoint && summary.address != kTarget) return false;
+            if (summary.address != kTarget) return false;
             metadata.kind = ikProc;
             return true;
         };
 
     std::vector<idr::core::DWord> installed;
-    if (!idr::core::ApplyDiscoveredProceduresToActiveLegacySession(flow, ikFunc, provider, &installed)) return 28;
-    if (providerCalls != 2 || installed.size() != 2 ||
-        installed[0] != image.entryPoint || installed[1] != kTarget)
-        return 29;
+    std::vector<idr::core::DWord> reused;
+    if (!idr::core::ApplyDiscoveredProceduresToActiveLegacySession(
+            flow, ikFunc, provider, &installed, &reused))
+        return 31;
+    if (providerCalls != 1 || installed.size() != 1 || installed[0] != kTarget ||
+        reused.size() != 1 || reused[0] != image.entryPoint)
+        return 32;
 
     const auto seededSession = idr::core::GetLegacyImageSessionView();
-    if (!seededSession.infos || !seededSession.infos[0] || !seededSession.infos[0x10]) return 30;
+    if (!seededSession.infos || !seededSession.infos[0] || !seededSession.infos[0x10]) return 33;
     PInfoRec entryRecord = static_cast<PInfoRec>(seededSession.infos[0]);
     PInfoRec targetRecord = static_cast<PInfoRec>(seededSession.infos[0x10]);
-    if (!entryRecord || !targetRecord || entryRecord->kind != ikProc || targetRecord->kind != ikProc ||
+    if (entryRecord != knownEntryRecord || !targetRecord || targetRecord->kind != ikProc ||
         !entryRecord->procInfo || !targetRecord->procInfo)
-        return 31;
-    if (entryRecord->procInfo->procSize != 0 || targetRecord->procInfo->procSize != 0 ||
-        entryRecord->procInfo->args || entryRecord->procInfo->locals ||
-        targetRecord->procInfo->args || targetRecord->procInfo->locals)
-        return 32;
+        return 34;
+
+    idr::core::ProcedurePrototypeMetadata capturedEntry;
+    if (!idr::core::CaptureLegacyProcedurePrototypeMetadata(*entryRecord, capturedEntry)) return 35;
+    if (!SamePrototype(knownEntry, capturedEntry) || entryRecord->procInfo->procSize != 77) return 36;
+    if (targetRecord->procInfo->procSize != 0 || targetRecord->procInfo->args || targetRecord->procInfo->locals)
+        return 37;
 
     const auto requiredProcFlags = idr::core::CodeFlags::ProcStart |
                                    idr::core::CodeFlags::Instruction |
                                    idr::core::CodeFlags::Code;
     if ((seededSession.flags[0] & requiredProcFlags) != requiredProcFlags ||
         (seededSession.flags[0x10] & requiredProcFlags) != requiredProcFlags)
-        return 33;
+        return 38;
 
     providerCalls = 0;
-    std::vector<idr::core::DWord> rejectedInstall;
-    if (idr::core::ApplyDiscoveredProceduresToActiveLegacySession(flow, ikFunc, provider, &rejectedInstall)) return 34;
-    if (providerCalls != 1 || !rejectedInstall.empty()) return 35;
+    std::vector<idr::core::DWord> secondInstalled;
+    std::vector<idr::core::DWord> secondReused;
+    if (!idr::core::ApplyDiscoveredProceduresToActiveLegacySession(
+            flow, ikFunc, provider, &secondInstalled, &secondReused))
+        return 39;
+    if (providerCalls != 0 || !secondInstalled.empty() || secondReused.size() != 2 ||
+        secondReused[0] != image.entryPoint || secondReused[1] != kTarget)
+        return 40;
+
+    idr::core::ProcedurePrototypeMetadata capturedAgain;
+    if (!idr::core::CaptureLegacyProcedurePrototypeMetadata(*entryRecord, capturedAgain)) return 41;
+    if (!SamePrototype(knownEntry, capturedAgain) || entryRecord->procInfo->procSize != 77) return 42;
 
     idr::core::ProcedurePrototypeMetadata minimalPrototype;
     minimalPrototype.kind = ikProc;
     idr::core::LegacyProcedureMetadataSeed directSeed;
-    if (!idr::core::BuildLegacyProcedureMetadataSeed(minimalPrototype, ikFunc, directSeed)) return 36;
-    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(0x00402010, directSeed)) return 37;
-    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(0x00600000, directSeed)) return 38;
+    if (!idr::core::BuildLegacyProcedureMetadataSeed(minimalPrototype, ikFunc, directSeed)) return 43;
+    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(0x00402010, directSeed)) return 44;
+    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(0x00600000, directSeed)) return 45;
 
     idr::core::ResetLegacyLoadedPeSession();
     const auto reset = idr::core::GetLegacyImageSessionView();
-    if (reset.entryPoint || reset.imageBase || reset.imageSize || reset.totalSize || reset.codeBase || reset.codeSize) return 39;
-    if (reset.analysisSize != 0 || reset.flags || reset.infos || reset.code) return 40;
-    if (idr::core::GetImageView().data != nullptr || !idr::core::GetImageSegments().empty()) return 41;
+    if (reset.entryPoint || reset.imageBase || reset.imageSize || reset.totalSize || reset.codeBase || reset.codeSize) return 46;
+    if (reset.analysisSize != 0 || reset.flags || reset.infos || reset.code) return 47;
+    if (idr::core::GetImageView().data != nullptr || !idr::core::GetImageSegments().empty()) return 48;
 
-    std::cout << "portable PE32 session probe: base=00400000 entry=00401000 packed=0x2000 legacy-state=bound cfg-procedure-slots=2\n";
+    std::cout << "portable PE32 session probe: base=00400000 entry=00401000 packed=0x2000 legacy-state=bound cfg-procedure-slots=2 existing-procedure=reused idempotent=ok\n";
     return 0;
 }

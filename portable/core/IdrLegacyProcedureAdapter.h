@@ -130,17 +130,20 @@ inline bool ApplyLegacyProcedureMetadataSeedToActiveSession(DWord address,
 using LegacyProcedurePrototypeProvider =
     std::function<bool(const ProcedureSummary &, ProcedurePrototypeMetadata &)>;
 
-// Materialize every procedure already discovered by the portable CFG into the
-// active legacy Infos[] session. Procedure addresses come only from the CFG;
-// prototype/kind data is supplied explicitly by the caller. All procedures are
-// preflighted before publication. If a later write fails, records installed by
-// this batch are removed again. procSize is still never inferred from observedSpan.
+// Reconcile every procedure already discovered by the portable CFG with the
+// active legacy Infos[] session. Existing procedure records are captured and
+// preserved untouched; only empty slots ask the caller for neutral prototype
+// metadata and materialize a new record. All slots are preflighted before any
+// new publication. A later write failure rolls back only records created by
+// this batch. procSize is never inferred from observedSpan.
 inline bool ApplyDiscoveredProceduresToActiveLegacySession(
     const ControlFlowResult &flow,
     Byte functionKind,
     const LegacyProcedurePrototypeProvider &provider,
-    std::vector<DWord> *installedAddresses = nullptr) {
+    std::vector<DWord> *installedAddresses = nullptr,
+    std::vector<DWord> *reusedAddresses = nullptr) {
     if (installedAddresses) installedAddresses->clear();
+    if (reusedAddresses) reusedAddresses->clear();
     if (!provider || flow.procedures.empty()) return false;
 
     const auto session = GetLegacyImageSessionView();
@@ -156,25 +159,32 @@ inline bool ApplyDiscoveredProceduresToActiveLegacySession(
 
     std::vector<PreparedProcedure> prepared;
     prepared.reserve(flow.procedures.size());
+    std::vector<DWord> reused;
+    reused.reserve(flow.procedures.size());
     std::vector<std::size_t> seenPositions;
     seenPositions.reserve(flow.procedures.size());
 
     for (const auto &summary : flow.procedures) {
+        const int offset = AddressToOffset(summary.address);
+        if (offset < 0) return false;
+        const auto pos = static_cast<std::size_t>(offset);
+        if (pos >= session.analysisSize || pos >= static_cast<std::size_t>(session.totalSize)) return false;
+        for (const auto seen : seenPositions)
+            if (seen == pos) return false;
+        seenPositions.push_back(pos);
+
+        if (Infos[pos]) {
+            ProcedurePrototypeMetadata existing;
+            if (!CaptureLegacyProcedurePrototypeMetadata(*Infos[pos], existing)) return false;
+            reused.push_back(summary.address);
+            continue;
+        }
+
         ProcedurePrototypeMetadata metadata;
         if (!provider(summary, metadata)) return false;
 
         LegacyProcedureMetadataSeed seed;
         if (!BuildLegacyProcedureMetadataSeed(metadata, functionKind, seed)) return false;
-
-        const int offset = AddressToOffset(summary.address);
-        if (offset < 0) return false;
-        const auto pos = static_cast<std::size_t>(offset);
-        if (pos >= session.analysisSize || pos >= static_cast<std::size_t>(session.totalSize)) return false;
-        if (Infos[pos]) return false;
-        for (const auto seen : seenPositions)
-            if (seen == pos) return false;
-
-        seenPositions.push_back(pos);
         prepared.push_back({summary.address, pos, std::move(seed)});
     }
 
@@ -196,6 +206,7 @@ inline bool ApplyDiscoveredProceduresToActiveLegacySession(
     }
 
     if (installedAddresses) *installedAddresses = std::move(installed);
+    if (reusedAddresses) *reusedAddresses = std::move(reused);
     return true;
 }
 

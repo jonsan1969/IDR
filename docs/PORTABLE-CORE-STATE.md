@@ -12,17 +12,20 @@ Repository: `jonsan1969/IDR` (fork of `sarog/IDR`).
 
 Active product branch: `agent/portable-cli`
 
-Frozen porting/integration reference: `agent/portable-core-integration`
+Frozen references — do not modify:
 
-Frozen compiler-smoke reference: `agent/portable-core-smoke`
+- `agent/portable-core-integration`
+- `agent/portable-core-smoke`
 
 `main` remains untouched at the modern Embarcadero baseline.
 
-Current active code milestone before this documentation-only update:
+Current verified code milestone before this documentation-only update:
 
-`428995104a14bfabb484c13d091f4ee0a6ad58a5` — `Prove neutral control flow link boundary`
+`0631b5d52bcf0a02079d70e5490653a4e4f09ab3` — `Exercise richer neutral control flow`
 
-The corresponding #78 integration run was reported successful. `docs/**` is excluded from push-triggered CI, so documentation-only commits do not start another integration run.
+Run #79 was reported green. Its parent is the documentation commit `aca88f5708cff9895614cb83bceeee4442ae88ba`, whose parent/code milestone was `428995104a14bfabb484c13d091f4ee0a6ad58a5` — `Prove neutral control flow link boundary` — with green run #78.
+
+`docs/**` is excluded from push-triggered CI, so documentation-only commits do not start the normal integration workflow.
 
 ## CI
 
@@ -30,27 +33,48 @@ Workflow: `.github/workflows/portable-core-integration.yml`
 
 The active branch uses:
 
-- GitHub-hosted Windows runner / MSVC x86 via `vswhere.exe` + `vcvars32.bat`;
+- GitHub-hosted Windows runner;
+- MSVC x86 via `vswhere.exe` + `vcvars32.bat`;
 - `actions/checkout@v6`;
 - fail-fast compile commands;
 - concurrency cancellation;
 - real generated legacy translation units;
-- a deterministic x86 PE32 fixture;
-- a neutral control-flow probe;
-- an end-to-end `idr-cli.exe` execution against the real fixture.
+- deterministic MSVC x86 PE32 fixture;
+- neutral control-flow probe;
+- end-to-end `idr-cli.exe` execution against the real fixture.
 
-x86 remains intentional because the real legacy decoder contains x86-specific code and the shipped `dis.dll` is x86.
+x86 remains intentional because the real legacy decoder and shipped `dis.dll` are x86.
+
+### Actions status/log workflow
+
+Normal project discipline remains:
+
+1. after a code push, inspect workflow metadata/status;
+2. if green, do not fetch logs;
+3. if failed, inspect jobs and fetch the failed job log exactly once;
+4. never push another code commit while the current workflow run is still active.
+
+The GitHub connector currently has a session-specific discovery limitation which future threads must know about:
+
+- `GitHub.fetch` works for a specific known Actions run endpoint such as `/actions/runs/<run_id>` and returns `run_number`, `event`, `status`, `conclusion`, `head_branch`, `head_sha`, etc.;
+- `GitHub.fetch_workflow_run_jobs`, `GitHub.fetch_workflow_job_steps`, `GitHub.fetch_workflow_job_logs`, artifact listing and artifact download remain available once a run/job id is known;
+- however, in the current ChatGPT session the generic collection endpoint `/actions/runs?branch=agent%2Fportable-cli&per_page=10` is rejected by the connector allowlist with HTTP 400, even though that exact `GitHub.fetch` route worked in the previous thread;
+- `/commits/<sha>/check-runs` collection discovery is similarly blocked;
+- the wrapper `GitHub.fetch_commit_workflow_runs` is not a substitute because it is currently limited to PR-triggered runs;
+- `GitHub.get_commit_combined_status` may return no useful Actions discovery metadata;
+- GitHub plugin connection and permissions were verified healthy (`Allow all actions`), so this is not a repo permission problem.
+
+Until discovery is restored, the minimal manual bridge is for the user to report the new run number/status (or run id if failed). Once the run id is known, continue with the established metadata -> jobs -> one failed log workflow.
 
 ## Clean active history
 
-`agent/portable-cli` was rebuilt cleanly from `main` rather than carrying the full experimental integration history.
+`agent/portable-cli` was rebuilt cleanly from `main`; the long linker/compiler archaeology remains on the frozen integration branch.
 
 Important active commits:
 
 - `7f3f3fe68db55c95a7928bbc86f3bf2580519113` — `Establish portable MSVC x86 core baseline`
 - `aaf47e2382a3b6419a74230931a052f6481aa6d0` — `Introduce portable CLI host`
 - `fcfc08db2b588036afc16a2e882b80a0d186dcb0` — `Decode loaded entry point in portable CLI`
-- `c6093badd1a1d0f5a441b8cb64b2c2776c23e724` — `Avoid Windows max macro in CLI trace`
 - `ee83293a665d6eeaca11b2a6315de163713c01af` — `Clamp file-aligned section data to analysis span`
 - `182277558d0a0f9837d965b3833bb9769741c535` — `Trace direct call procedure candidate`
 - `8238a97c54941107ef125bd4b588601eb7893e25` — `Queue bounded procedure candidates`
@@ -65,139 +89,106 @@ Important active commits:
 - `47c48d12f03a1dfa32a05c7cac6aff4ad84bddcf` — `Count incoming procedure calls`
 - `ebbde9b286526725b6cfd645a6335906c78479f0` — `Inject address mapping into control flow`
 - `428995104a14bfabb484c13d091f4ee0a6ad58a5` — `Prove neutral control flow link boundary`
-
-The frozen `agent/portable-core-integration` branch remains the archaeology/evidence trail for the earlier #8-#57 linker and compatibility work.
+- `0631b5d52bcf0a02079d70e5490653a4e4f09ab3` — `Exercise richer neutral control flow`
 
 ## Verified architecture
 
-The project now has runtime evidence for the following path:
+Runtime evidence now covers:
 
-`PE32 target -> IdrPeLoader -> authoritative loaded session -> real MDisasm/dis.dll decode -> bounded neutral control-flow engine -> shared AnalysisState -> deterministic CLI output`
+`PE32 target -> IdrPeLoader -> authoritative loaded session -> real MDisasm/dis.dll decode -> bounded neutral CFG -> shared AnalysisState -> deterministic CLI output`
 
-The portable layer includes:
+The portable layer contains neutral core services, segment-aware PE loading/image context, shared `AnalysisState`/legacy `Flags`, instruction navigation, legacy session bridge, generated real `Disasm`/`KnowledgeBase`/`Infos`/`Misc` and almost-complete `Decompiler` translation units, `idr-cli.exe`, and neutral `IdrControlFlow`.
 
-- neutral core types/services;
-- segment-aware PE image context and loader;
-- `AnalysisState` with legacy flags view;
-- instruction navigation;
-- legacy session bridge;
-- generated real `Disasm`, `KnowledgeBase`, `Infos`, `Misc` and almost-complete `Decompiler` translation units;
-- real `idr-cli.exe` host;
-- neutral `IdrControlFlow` analysis model.
+The neutral control-flow probe links only:
 
-## PE/session behavior
+`IdrAnalysisState.obj + idr_control_flow_probe.obj`
 
-The neutral PE32 loader retains the analysis-facing semantics extracted from legacy IDR, including section span handling, packed backed bytes, unbacked sections and the legacy `0x80000` marker.
-
-A loaded image is bound to both neutral and legacy-facing state through the session bridge. The CLI verifies the loaded image and legacy session agree before running analysis.
-
-A file-alignment bug found by the deterministic fixture was fixed by clamping copied raw section data to the analysis span rather than assuming `SizeOfRawData` fits the virtual/analysis range.
-
-## Real decoder and CLI analysis
-
-The CLI initializes the real legacy `MDisasm` path and decodes the actual PE32 entry point. Decoder results are adapted into a neutral `DecodedInstruction` structure rather than allowing the control-flow engine to depend directly on `Disasm` globals or legacy `DISINFO`.
-
-The CLI currently produces deterministic trace/graph statistics in addition to PE/session metadata.
+It does not link `IdrImageContext`, PE loader/session bridge, disassembler or generated legacy TUs. `AnalyzeBoundedControlFlow` receives an injected `AddressMapper`; the CLI supplies segment-aware image mapping while the neutral probe supplies a local mapper.
 
 ## Neutral control-flow engine
 
-`IdrControlFlow` has moved progressively out of `wmain` into a neutral bounded engine.
+Current behavior includes:
 
-It currently supports:
-
-- bounded procedure-candidate worklist;
-- deduplicated direct-call procedure discovery;
+- bounded deduplicated procedure-candidate worklist;
 - bounded basic-block worklist per procedure;
 - direct calls;
-- direct conditional and unconditional branches;
-- conditional branch taken + fall-through edges;
+- conditional and unconditional direct branches;
+- explicit `Call`, `BranchTaken`, `FallThrough` edges;
 - `ret` block termination;
 - instruction de-duplication within a procedure;
-- shared `AnalysisState` flag propagation;
-- explicit `ProcStart` only for procedures that were actually analyzed;
-- explicit edge kinds: `Call`, `BranchTaken`, `FallThrough`;
 - procedure ownership on every edge;
 - procedure summaries;
-- call xrefs containing caller, call-site and callee;
-- incoming-call counts per procedure.
+- call xrefs `{ caller, callSite, callee }`;
+- incoming direct-call counts;
+- `Instruction`, `Code`, `Call`, `Loc` flag propagation;
+- `ProcStart` only for procedures actually analyzed, never ordinary branch/basic-block targets.
 
-The engine deliberately does not mark branch-only basic-block targets as `ProcStart`.
+Call-sites are not deduplicated; procedure candidates are.
 
-`ProcEnd` is not currently inferred. Legacy `AnalyzeProc1` has the relevant `cfProcEnd` writes commented out on common return/exit paths, so the portable engine does not invent stronger semantics than the source supports.
+## Deterministic fixtures
 
-## Current deterministic graph fixture
+The established neutral fixture still proves three procedures: Entry -> TargetA, TargetA -> TargetB twice, plus a conditional branch. Its contract remains 3 entry blocks, 2 candidates, 5 edges (3 Call, 1 BranchTaken, 1 FallThrough), ownership 3/2/0, 3 call xrefs and incoming call counts 0/1/2.
 
-The neutral probe models three procedures and a conditional branch. Its established contract includes:
+Commit `0631b5d...` added a second rich graph fixture without changing production `IdrControlFlow` semantics. Green run #79 proves the existing engine handles:
 
-- entry procedure with three basic blocks;
-- two discovered call-target procedures;
-- five explicit edges total;
-- three call edges;
-- one branch-taken edge;
-- one fall-through edge;
-- entry owns three edges;
-- TargetA owns two edges;
-- TargetB owns zero edges;
-- three call xrefs: Entry -> A once and A -> B twice;
-- incoming call counts: Entry `0`, A `1`, B `2`.
+- unconditional direct jumps;
+- loops/back-edges;
+- cross-block joins;
+- multiple incoming edges to a join;
+- invalid/out-of-image direct call targets;
+- invalid/out-of-image unconditional jump targets;
+- no invalid edge/xref/candidate creation;
+- branch/join/loop targets still not promoted to `ProcStart`.
 
-The real MSVC x86 PE32 fixture independently exercises the same control-flow engine through `MDisasm` and requires the expected entry-block and edge counts.
+## Procedure extent / ProcEnd evidence
 
-## Image-context decoupling
+Do not invent `ProcEnd` semantics.
 
-The most recent architecture milestone removes `IdrControlFlow`'s direct dependency on global `AddressToOffset()`.
+Legacy `AnalyzeProc1` sets `cfProcStart | cfPass1` on an analyzed procedure. On accepted procedure-ending returns it writes:
 
-`AnalyzeBoundedControlFlow` now receives an injected `AddressMapper`.
+`recN->procInfo->procSize = curAdr - fromAdr + instrLen`
 
-- The CLI adapter supplies the existing segment-aware `IdrImageContext::AddressToOffset` semantics.
-- The neutral probe supplies its own local mapper over synthetic bytes.
-- `IdrControlFlow.h` no longer includes `IdrImageContext.h`.
+while the adjacent `SetFlag(cfProcEnd, ...)` is commented out. A similar size assignment appears for a terminating near absolute indirect jump outside valid code, again with the `cfProcEnd` write commented out. Entry-point `@Halt0` handling follows the same size-metadata pattern.
 
-#78 strengthens this from a source-level claim to a linker-level claim: the neutral control-flow probe links only against `IdrAnalysisState.obj` plus its own object. `IdrImageContext.obj`, PE loading, legacy bridge and the disassembler are not available to satisfy hidden dependencies.
+`GetProcSize(fromAdr)` first returns `recN->procInfo->procSize` when present; if no stored size exists it falls back to `FMain_11011981->EstimateProcSize(fromAdr)`.
 
-## Known semantic risks
+Therefore current evidence says procedure extent is primarily explicit `procInfo->procSize` metadata with an estimator fallback, not a simple `ProcEnd` bit derived from every `ret`. More legacy investigation is required before adding neutral extent semantics.
 
-Successful compile/link/runtime probes do not establish full behavioral equivalence with Borland/VCL IDR.
+## Known risks
 
-Important open risks include:
-
-- Borland 1-based direct `String[index]` semantics versus `std::string` 0-based indexing;
-- incomplete `WideString`, `Variant`, `Currency`, `Comp` and formatting fidelity;
-- exact legacy `SetFlags` / `ClearFlags` end-boundary behavior;
-- transitional register/string/container ABI compatibility;
-- metadata ownership/lifetime as deeper legacy analysis creates real `InfoRec` structures;
-- indirect calls/jumps and switch/table control flow;
-- procedure size/end semantics;
-- imports/exports/resources and Delphi-specific discovery;
-- deeper decompiler passes are not yet driven by the CLI.
+- Borland `String` direct indexing is 1-based versus `std::string` 0-based.
+- `WideString`, `Variant`, `Currency`, `Comp` and formatting compatibility remain transitional.
+- exact legacy `SetFlags`/`ClearFlags` end-boundary fidelity remains open.
+- metadata ownership/lifetime matters as deeper `InfoRec`/type/procedure paths activate.
+- indirect calls/jumps, switch/jump tables and richer x86 control flow remain unsupported by neutral CFG.
+- procedure size/end semantics are not yet fully proved.
+- imports/exports/resources and Delphi-specific discovery are not yet driven through CLI.
+- deeper decompiler passes are not yet invoked by the CLI.
 
 ## Immediate next phase
 
-The next work should build on the now-neutral CFG rather than returning to linker-stub chasing.
-
-Good next chunks are:
-
-1. add richer procedure/xref query helpers without reintroducing global session dependencies;
-2. extend deterministic fixtures for unconditional branches, loops/back-edges and out-of-image targets;
-3. decide and prove procedure extent/size semantics from legacy behavior rather than guessing `ProcEnd`;
-4. begin feeding discovered procedures into the next safe legacy analysis/decompiler stage;
-5. audit runtime-reached Borland string/RTL semantics as those paths become active;
-6. add controlled Delphi Win32 fixtures and compare with original IDR;
-7. later publish `idr-cli.exe` together with required runtime `dis.dll` as a GitHub Actions artifact.
+1. finish deriving `EstimateProcSize` / initial procedure-size semantics from legacy code;
+2. decide whether neutral procedure summaries should expose an evidence-backed extent field without creating `ProcEnd` semantics;
+3. begin feeding discovered procedures into the next safe legacy analysis/decompiler stage;
+4. inspect resulting `Flags`, `Infos`, procedure/type metadata and lifetimes;
+5. audit runtime-reached Borland String/RTL paths;
+6. later add controlled Delphi Win32 fixtures and comparison against original IDR;
+7. when useful outside CI, publish both `idr-cli.exe` and required `dis.dll` as an Actions artifact.
 
 ## Working rules
 
-- Compiler/linker/runtime evidence over speculation.
-- Keep architecture-scale changes coherent.
-- Do not disturb frozen reference branches.
-- Do not push over an active `agent/portable-cli` workflow run.
-- Preserve original legacy source unless a deliberate structural port warrants changing it.
-- No upstream PR or merge to `main` yet.
-- Keep these docs current at meaningful milestones.
-- Green runs need metadata only; do not repeatedly fetch successful logs.
+- Compiler/linker/runtime evidence before speculation.
+- One coherent architecture commit at a time.
+- Do not disturb frozen branches or `main`.
+- Do not push while the current integration run is active.
+- Successful runs: metadata only, no log retrieval.
+- Failed runs: metadata -> jobs -> failed job log exactly once.
+- Preserve original legacy source unless a deliberate structural port requires a change.
+- GitHub writes on the active branch use `create_blob -> create_tree -> create_commit -> update_ref`.
+- No PR/merge to `main` yet.
 
 ## Success criterion
 
 `windows-latest -> MSVC x86 -> portable IDR core -> real PE32 analysis -> headless idr-cli.exe -> GitHub Actions artifact`
 
-without Embarcadero C++Builder, paid CI tooling, or a self-hosted runner.
+without Embarcadero C++Builder, paid CI tooling or a self-hosted runner.

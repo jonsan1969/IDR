@@ -141,6 +141,33 @@ bool RunEstablishedFixture() {
         return false;
     }
 
+    const auto *entrySummary = FindProcedureSummary(result, kBase);
+    const auto *targetASummary = FindProcedureSummary(result, kTargetA);
+    const auto *targetBSummary = FindProcedureSummary(result, kTargetB);
+    const auto *missingSummary = FindProcedureSummary(result, kBase + 0x30u);
+    const auto targetBIncoming = FindIncomingCallXrefs(result, kTargetB);
+    const auto targetAOutgoing = FindOutgoingCallXrefs(result, kTargetA);
+    const auto entryEdges = FindProcedureEdges(result, kBase);
+    const auto missingIncoming = FindIncomingCallXrefs(result, kBase + 0x30u);
+    const auto missingOutgoing = FindOutgoingCallXrefs(result, kBase + 0x30u);
+    const auto missingEdges = FindProcedureEdges(result, kBase + 0x30u);
+
+    if (!entrySummary || entrySummary->address != kBase ||
+        !targetASummary || targetASummary->address != kTargetA ||
+        !targetBSummary || targetBSummary->address != kTargetB ||
+        missingSummary != nullptr ||
+        targetBIncoming.size() != 2 ||
+        targetBIncoming[0].callSite != kTargetA ||
+        targetBIncoming[1].callSite != kTargetA + 5 ||
+        targetAOutgoing.size() != 2 ||
+        targetAOutgoing[0].callee != kTargetB ||
+        targetAOutgoing[1].callee != kTargetB ||
+        entryEdges.size() != 3 ||
+        !missingIncoming.empty() || !missingOutgoing.empty() || !missingEdges.empty()) {
+        std::cerr << "control-flow probe produced unexpected query results\n";
+        return false;
+    }
+
     const auto branchOffset = static_cast<std::size_t>(addressToOffset(kBranchTarget));
     const auto aOffset = static_cast<std::size_t>(addressToOffset(kTargetA));
     const auto bOffset = static_cast<std::size_t>(addressToOffset(kTargetB));
@@ -175,6 +202,7 @@ bool RunEstablishedFixture() {
     std::cout << "entry-owned-edge-count=" << entryOwnedEdges << '\n';
     std::cout << "target-a-owned-edge-count=" << targetAOwnedEdges << '\n';
     std::cout << "target-b-owned-edge-count=" << targetBOwnedEdges << '\n';
+    std::cout << "target-b-query-incoming-count=" << targetBIncoming.size() << '\n';
     return true;
 }
 
@@ -273,6 +301,15 @@ bool RunRichGraphFixture() {
         result.procedures[0].fallThroughEdgeCount != 2 ||
         result.procedures[0].incomingCallCount != 0) {
         std::cerr << "rich control-flow probe produced unexpected procedure summary\n";
+        return false;
+    }
+
+    const auto *entrySummary = FindProcedureSummary(result, kBase);
+    const auto entryEdges = FindProcedureEdges(result, kBase);
+    if (!entrySummary || entrySummary->blockCount != 6 || entryEdges.size() != 7 ||
+        !FindIncomingCallXrefs(result, kBase).empty() ||
+        !FindOutgoingCallXrefs(result, kBase).empty()) {
+        std::cerr << "rich control-flow probe produced unexpected query results\n";
         return false;
     }
 

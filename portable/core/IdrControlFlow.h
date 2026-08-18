@@ -92,6 +92,37 @@ struct ControlFlowResult {
     std::string error;
 };
 
+inline const ProcedureSummary *FindProcedureSummary(const ControlFlowResult &result, DWord address) {
+    for (const auto &procedure : result.procedures) {
+        if (procedure.address == address) return &procedure;
+    }
+    return nullptr;
+}
+
+inline std::vector<CallXref> FindIncomingCallXrefs(const ControlFlowResult &result, DWord callee) {
+    std::vector<CallXref> matches;
+    for (const auto &xref : result.callXrefs) {
+        if (xref.callee == callee) matches.push_back(xref);
+    }
+    return matches;
+}
+
+inline std::vector<CallXref> FindOutgoingCallXrefs(const ControlFlowResult &result, DWord caller) {
+    std::vector<CallXref> matches;
+    for (const auto &xref : result.callXrefs) {
+        if (xref.caller == caller) matches.push_back(xref);
+    }
+    return matches;
+}
+
+inline std::vector<ControlFlowEdge> FindProcedureEdges(const ControlFlowResult &result, DWord procedureAddress) {
+    std::vector<ControlFlowEdge> matches;
+    for (const auto &edge : result.edges) {
+        if (edge.procedure == procedureAddress) matches.push_back(edge);
+    }
+    return matches;
+}
+
 inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
                                       AnalysisState &analysis,
                                       const InstructionDecoder &decoder,

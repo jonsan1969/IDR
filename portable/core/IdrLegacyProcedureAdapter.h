@@ -2,6 +2,10 @@
 
 #include "IdrProcedureAnalysis.h"
 #include "IdrLegacyCompat.h"
+#include "IdrLegacyBridge.h"
+#include "IdrImageContext.h"
+
+extern PInfoRec *Infos;
 
 namespace idr::core {
 
@@ -35,6 +39,36 @@ inline bool ApplyLegacyProcedureMetadataSeed(InfoRec &record,
         if (!record.procInfo->AddLocal(local.ofs, local.size, local.name, local.typeDef)) return false;
     }
 
+    return true;
+}
+
+// Install one fully prepared procedure record into the currently active loaded
+// PE session. Build and populate the record detached first, then publish it to
+// Infos[] only after success so a failed adaptation cannot leave a partial slot.
+// This step deliberately does not set cfProcStart and still does not invent
+// legacy procSize from the portable observed span.
+inline bool ApplyLegacyProcedureMetadataSeedToActiveSession(DWord address,
+                                                            const LegacyProcedureMetadataSeed &seed) {
+    if (seed.kind < ikRefine || seed.kind > ikFunc) return false;
+
+    const auto session = GetLegacyImageSessionView();
+    if (!Infos || !session.infos ||
+        session.infos != reinterpret_cast<void *const *>(Infos))
+        return false;
+
+    const int offset = AddressToOffset(address);
+    if (offset < 0) return false;
+    const auto pos = static_cast<std::size_t>(offset);
+    if (pos >= session.analysisSize || pos >= static_cast<std::size_t>(session.totalSize)) return false;
+    if (Infos[pos]) return false;
+
+    InfoRec *record = new InfoRec(-1, seed.kind);
+    if (!ApplyLegacyProcedureMetadataSeed(*record, seed)) {
+        delete record;
+        return false;
+    }
+
+    Infos[pos] = record;
     return true;
 }
 

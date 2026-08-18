@@ -1,5 +1,6 @@
 #include "IdrImageContext.h"
 #include "IdrLegacyBridge.h"
+#include "IdrLegacyProcedureAdapter.h"
 #include "IdrPeLoader.h"
 
 #define NOMINMAX
@@ -140,12 +141,47 @@ int main() {
     if (!idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::Code, 0)) return 26;
     if ((session.flags[0] & idr::core::CodeFlags::Code) == 0) return 27;
 
+    idr::core::ProcedurePrototypeMetadata prototype;
+    prototype.kind = ikFunc;
+    prototype.returnType = "Integer";
+    prototype.flags = PF_BPBASED | 1u;
+    prototype.bpBase = 8;
+    prototype.retBytes = 4;
+    prototype.stackSize = 64;
+    prototype.arguments.push_back({0x21, true, 0, 4, "Value", "Integer"});
+    prototype.arguments.push_back({0x22, false, 8, 4, "Other", "Pointer"});
+    prototype.locals.push_back({-4, 4, "Temp", "Integer"});
+
+    idr::core::LegacyProcedureMetadataSeed seed;
+    if (!idr::core::BuildLegacyProcedureMetadataSeed(prototype, ikFunc, seed)) return 28;
+    if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(image.entryPoint, seed)) return 29;
+
+    const auto seededSession = idr::core::GetLegacyImageSessionView();
+    if (!seededSession.infos || !seededSession.infos[0]) return 30;
+    PInfoRec record = static_cast<PInfoRec>(seededSession.infos[0]);
+    if (!record || record->kind != ikFunc || record->type != "Integer" || !record->procInfo) return 31;
+    if (record->procInfo->flags != prototype.flags || record->procInfo->bpBase != 8 ||
+        record->procInfo->retBytes != 4 || record->procInfo->stackSize != 64 ||
+        record->procInfo->procSize != 0) return 32;
+    if (!record->procInfo->args || record->procInfo->args->Count != 2) return 33;
+    PARGINFO firstArg = record->procInfo->GetArg(0);
+    PARGINFO secondArg = record->procInfo->GetArg(1);
+    if (!firstArg || !secondArg || !firstArg->Register || secondArg->Register ||
+        firstArg->Ndx != 0 || secondArg->Ndx != 8 ||
+        firstArg->TypeDef != "Integer" || secondArg->TypeDef != "Pointer") return 34;
+    PLOCALINFO local = record->procInfo->GetLocal(-4);
+    if (!local || local->Name != "Temp" || local->TypeDef != "Integer") return 35;
+    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(image.entryPoint, seed)) return 36;
+    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(0x00402010, seed)) return 37;
+    if (idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(0x00600000, seed)) return 38;
+    if ((seededSession.flags[0] & idr::core::CodeFlags::ProcStart) != 0) return 39;
+
     idr::core::ResetLegacyLoadedPeSession();
     const auto reset = idr::core::GetLegacyImageSessionView();
-    if (reset.entryPoint || reset.imageBase || reset.imageSize || reset.totalSize || reset.codeBase || reset.codeSize) return 28;
-    if (reset.analysisSize != 0 || reset.flags || reset.infos || reset.code) return 29;
-    if (idr::core::GetImageView().data != nullptr || !idr::core::GetImageSegments().empty()) return 30;
+    if (reset.entryPoint || reset.imageBase || reset.imageSize || reset.totalSize || reset.codeBase || reset.codeSize) return 40;
+    if (reset.analysisSize != 0 || reset.flags || reset.infos || reset.code) return 41;
+    if (idr::core::GetImageView().data != nullptr || !idr::core::GetImageSegments().empty()) return 42;
 
-    std::cout << "portable PE32 session probe: base=00400000 entry=00401000 packed=0x2000 legacy-state=bound\n";
+    std::cout << "portable PE32 session probe: base=00400000 entry=00401000 packed=0x2000 legacy-state=bound legacy-procedure-slot=seeded\n";
     return 0;
 }

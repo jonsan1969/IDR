@@ -1,5 +1,6 @@
 #include "IdrProcedureAnalysis.h"
 #include "IdrHeadlessPrototypePolicy.h"
+#include "IdrDecompilerInput.h"
 
 #include <iostream>
 
@@ -118,9 +119,121 @@ int main() {
     if (!ResolveProcedurePrototype(completeRequest, kFunctionKind, mustNotRun, resolved)) return 15;
     if (resolverCalled || resolved.kind != kProcedureKind) return 16;
 
+    constexpr DWord kEntry = 0x00401000u;
+    constexpr DWord kCallSite = 0x00401000u;
+    constexpr DWord kCallee = 0x00402000u;
+    ControlFlowResult flow;
+
+    TraceInstruction callInstruction;
+    callInstruction.address = kCallSite;
+    callInstruction.length = 5;
+    callInstruction.mnemonic = "call";
+    callInstruction.disasm = "call Callee";
+    flow.entryTrace.push_back(callInstruction);
+
+    BasicBlockTrace entryBlock;
+    entryBlock.address = kEntry;
+    entryBlock.instructions.push_back(callInstruction);
+    flow.entryBlocks.push_back(entryBlock);
+
+    ProcedureSummary entrySummary;
+    entrySummary.address = kEntry;
+    entrySummary.blockCount = 1;
+    entrySummary.instructionCount = 1;
+    entrySummary.observedStart = kEntry;
+    entrySummary.observedEndExclusive = kEntry + 5;
+    entrySummary.observedSpan = 5;
+    flow.procedures.push_back(entrySummary);
+
+    ProcedureSummary calleeSummary;
+    calleeSummary.address = kCallee;
+    flow.procedures.push_back(calleeSummary);
+
+    CallXref call;
+    call.caller = kEntry;
+    call.callSite = kCallSite;
+    call.callee = kCallee;
+    flow.callXrefs.push_back(call);
+
+    ProcedurePrototypeMetadata incompleteEntry;
+    incompleteEntry.kind = kFunctionKind;
+    ProcedurePrototypeMetadata completeCallee;
+    completeCallee.kind = kProcedureKind;
+
+    ProcedurePrototypeLookup lookupCurrent = [&](DWord address, ProcedurePrototypeMetadata &metadata) {
+        if (address == kEntry) {
+            metadata = incompleteEntry;
+            return true;
+        }
+        if (address == kCallee) {
+            metadata = completeCallee;
+            return true;
+        }
+        return false;
+    };
+    std::size_t currentResolverCalls = 0;
+    HeadlessPrototypeResolver resolveCurrent = [&](const PrototypeResolutionRequest &seen) {
+        ++currentResolverCalls;
+        PrototypeResolutionResult result;
+        if (seen.procedureAddress != kEntry || seen.callSite != 0 ||
+            seen.current.kind != kFunctionKind || !seen.current.returnType.empty())
+            return result;
+        result.status = PrototypeResolutionStatus::Resolved;
+        result.prototype = seen.current;
+        result.prototype.returnType = "Integer";
+        return result;
+    };
+
+    ProcedureDecompileInput decompileInput;
+    if (!BuildProcedureDecompileInput(flow, kEntry, kFunctionKind,
+                                      lookupCurrent, resolveCurrent, decompileInput))
+        return 17;
+    if (currentResolverCalls != 1 || decompileInput.prototype.returnType != "Integer" ||
+        decompileInput.callees.size() != 1 || decompileInput.callees[0].address != kCallee ||
+        decompileInput.callees[0].prototype.kind != kProcedureKind)
+        return 18;
+    if (!incompleteEntry.returnType.empty()) return 19;
+
+    ProcedurePrototypeMetadata completeEntry;
+    completeEntry.kind = kProcedureKind;
+    ProcedurePrototypeMetadata incompleteCallee;
+    incompleteCallee.kind = kFunctionKind;
+    ProcedurePrototypeLookup lookupCallee = [&](DWord address, ProcedurePrototypeMetadata &metadata) {
+        if (address == kEntry) {
+            metadata = completeEntry;
+            return true;
+        }
+        if (address == kCallee) {
+            metadata = incompleteCallee;
+            return true;
+        }
+        return false;
+    };
+    std::size_t calleeResolverCalls = 0;
+    HeadlessPrototypeResolver resolveCallee = [&](const PrototypeResolutionRequest &seen) {
+        ++calleeResolverCalls;
+        PrototypeResolutionResult result;
+        if (seen.procedureAddress != kCallee || seen.callSite != kCallSite ||
+            seen.current.kind != kFunctionKind || !seen.current.returnType.empty())
+            return result;
+        result.status = PrototypeResolutionStatus::Resolved;
+        result.prototype = seen.current;
+        result.prototype.returnType = "Pointer";
+        return result;
+    };
+    if (!BuildProcedureDecompileInput(flow, kEntry, kFunctionKind,
+                                      lookupCallee, resolveCallee, decompileInput))
+        return 20;
+    if (calleeResolverCalls != 1 || decompileInput.prototype.kind != kProcedureKind ||
+        decompileInput.callees.size() != 1 ||
+        decompileInput.callees[0].prototype.returnType != "Pointer")
+        return 21;
+    if (!incompleteCallee.returnType.empty()) return 22;
+
     std::cout << "procedure-prototype-metadata=ok\n";
     std::cout << "legacy-procedure-metadata-seed=ok\n";
     std::cout << "headless-prototype-policy=ok\n";
+    std::cout << "neutral-decompiler-input-resolution=ok\n";
     std::cout << "seed-argument-count=" << seed.arguments.size() << '\n';
     std::cout << "seed-local-count=" << seed.locals.size() << '\n';
     return 0;

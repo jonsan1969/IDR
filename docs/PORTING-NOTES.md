@@ -14,106 +14,39 @@ Technical journal for the MSVC/GitHub-hosted portable-core and CLI work.
 
 `agent/portable-cli` was rebuilt cleanly from `main`; the long experimental linker/compiler archaeology remains on the frozen integration branch.
 
-Current verified code milestone:
+Latest green architecture milestone:
 
-`f321469aed6ebb641c4ae7438a5776f382f62ad5` — `Extract legacy decompiler preflight adapter`
+`fc18fca5e3936a9997977fd6ae59920ae412d60a` — `Fold legacy decompiler preflight into integration`
 
-Normal integration #102 and the first dedicated legacy-decompiler preflight workflow were both reported green.
+Run #105 was reported green.
 
-## Foundation retained from the integration phase
+Latest pushed code milestone:
 
-The early work established that original IDR analysis/decompiler code can be carried into a free hosted MSVC x86 build without reimplementing the engine.
+`77ceedc17fa238317489a19f9a01f962c865ba43` — `Run minimal legacy decompiler loop`
 
-Retained evidence:
+Run #106 was reported red and is not yet diagnosed. Do not infer its cause before reading the failed job log exactly once.
 
-- real generated `Disasm.cpp` executes against shipped x86 `dis.dll`;
-- complete generated `KnowledgeBase.cpp`, `Infos.cpp` and `Misc.cpp` compile/link;
-- essentially complete real `Decompiler.cpp` compiles after removing three GUI-owned presentation/orchestration definitions from the generated copy;
-- linker-driven integration reduced unresolved externals to zero;
-- neutral services replace explicit GUI/headless seams rather than broad VCL stubbing;
-- neutral PE32 loading and an authoritative shared legacy/neutral image session are established.
+## Foundation retained from integration
 
-## PE32 and decoder path
+The port has established that original IDR analysis/decompiler code can be carried into a free hosted MSVC x86 build without reimplementing the engine.
 
-`IdrPeLoader` models IDR's analysis-facing PE behavior rather than a generic Windows loader.
+Retained evidence includes real generated `Disasm.cpp` running against shipped x86 `dis.dll`, complete generated `KnowledgeBase.cpp`, `Infos.cpp`, `Misc.cpp`, and essentially complete `Decompiler.cpp` compiling/linking, linker-driven unresolved-symbol reduction to zero, explicit headless service seams, neutral PE32 loading and a shared authoritative neutral/legacy session.
 
-Important semantics retained:
+## PE32 / CFG path
 
-- PE32/x86 validation;
-- absolute entry point from `ImageBase + AddressOfEntryPoint`;
-- section/segment mapping;
-- unbacked resource/reloc/zero-raw spans;
-- packed backed analysis bytes;
-- safe clamping of file-aligned raw data to the analysis span;
-- shared code bytes, `Flags`/`AnalysisState` and `Infos[]` storage in the active session.
+`IdrPeLoader` validates PE32/x86, maps sections into analysis-facing bytes, preserves absolute entry point semantics and binds the loaded image to the active legacy session.
 
-The CLI initializes the real `MDisasm`/`dis.dll` chain and adapts `DISINFO` into neutral decoded-instruction facts.
+The CLI initializes the real `MDisasm`/`dis.dll` chain and adapts `DISINFO` into neutral decoded instruction facts.
 
-## Neutral bounded control flow
+The neutral CFG remains decoder/address-mapper injected and independent of PE globals. It supports bounded candidate/block worklists, direct calls, direct conditional/unconditional branches, explicit `Call`, `BranchTaken`, `FallThrough` edges, call xrefs, procedure ownership, summaries and observed instruction spans.
 
-The current CFG engine is injected with decoder and address-mapper callbacks and remains independent of the PE loader/global image context.
+`observedStart`, `observedEndExclusive` and `observedSpan` are observational only. They are not mapped to legacy `procInfo->procSize`, and no synthetic `ProcEnd` is created.
 
-The standalone control-flow probe links only:
+## Procedure metadata / Infos[] bridge
 
-`IdrAnalysisState.obj + idr_control_flow_probe.obj`
+Neutral prototype metadata covers kind, return type, flags, `bpBase`, `retBytes`, `stackSize`, arguments and locals. `procSize` is deliberately excluded.
 
-Current CFG behavior:
-
-- bounded candidate queue;
-- bounded block queue;
-- direct call discovery;
-- direct conditional/unconditional branches;
-- explicit `Call`, `BranchTaken`, `FallThrough` edges;
-- procedure ownership on edges;
-- call xrefs `{ caller, callSite, callee }`;
-- procedure summaries;
-- incoming/outgoing edge/xref query helpers;
-- successful analyzed procedures get `ProcStart`;
-- ordinary branch targets get location/code flags but not `ProcStart`;
-- invalid targets create no edge/xref/candidate;
-- unconditional jumps, joins and loop back-edges are covered by the richer fixture.
-
-### Observed extent
-
-Procedure summaries now contain:
-
-- `observedStart`
-- `observedEndExclusive`
-- `observedSpan`
-
-These describe the enclosing numeric range of positively-sized decoded instructions owned by the procedure. Holes are included in the numeric span.
-
-They are observational only and are not mapped to legacy `procInfo->procSize`.
-
-## Procedure-analysis input
-
-`ProcedureAnalysisInput` packages the neutral per-procedure analysis surface:
-
-- summary;
-- instructions;
-- blocks;
-- owned edges;
-- incoming calls;
-- outgoing calls.
-
-The builder is runtime-tested for entry and candidate procedures and rejects missing procedure addresses.
-
-## Neutral prototype metadata
-
-The neutral prototype model includes:
-
-- procedure kind;
-- return type;
-- flags;
-- `bpBase`;
-- `retBytes`;
-- `stackSize`;
-- argument tag/register/index/size/name/type;
-- local offset/size/name/type.
-
-Legacy seed types mirror this value surface without exposing `InfoRec`.
-
-Actual legacy procedure kinds confirmed from IDR:
+Confirmed legacy procedure kinds:
 
 - `ikRefine = 0x25`
 - `ikConstructor = 0x26`
@@ -121,266 +54,198 @@ Actual legacy procedure kinds confirmed from IDR:
 - `ikProc = 0x28`
 - `ikFunc = 0x29`
 
-The older synthetic probe values `1` and `2` are test-only kinds and must not be confused with real legacy constants.
+The bridge supports neutral -> legacy metadata seeding and read-only legacy -> neutral capture. Runtime roundtrip evidence preserves scalar fields, args, locals and register markers while leaving stored `procSize` untouched.
 
-## Prototype completeness
+`ApplyDiscoveredProceduresToActiveLegacySession()` reconciles CFG procedures into `Infos[]` idempotently: valid existing procedure records are reused, empty slots can be materialized, non-procedure occupied slots fail, writes are preflighted, batch-created records roll back on failure, and metadata providers are not called for reused records.
 
-Legacy `TDecompiler::CheckPrototype()` establishes the key rule:
+The real CLI runs reconciliation after CFG analysis.
 
-- every argument requires a non-empty type;
-- `ikFunc` additionally requires a non-empty return type;
-- procedure-style kinds do not require a return type.
+## Neutral decompiler input and prototype policy
 
-The neutral `IsProcedurePrototypeComplete()` and seed-building path preserve this behavior.
+`IdrDecompilerInput.h` contains neutral per-procedure analysis, current prototype and unique direct-callee prototype entries. The builder is supplied a prototype lookup and optional `HeadlessPrototypeResolver`, with no dependency on `InfoRec`, `Infos[]`, PE loader or legacy session globals.
 
-## Neutral -> legacy metadata adaptation
+`IdrLegacyDecompilerInput.h` is a thin active-session lookup adapter.
 
-`ApplyLegacyProcedureMetadataSeed()` writes neutral seed metadata into a real detached procedure-style `InfoRec`/`InfoProcInfo`.
+`IdrHeadlessPrototypePolicy.h` uses explicit `Resolved`, `Unavailable` and `Rejected` results. Complete prototypes bypass the resolver; incomplete metadata succeeds only when explicit resolver output is complete. No return or argument type is fabricated. Resolver-provided metadata is read-time only.
 
-Runtime evidence proves:
+Prototype resolution has been runtime-tested for both current procedures and direct callees, with callee call-site identity preserved.
 
-- kind/type/flags/bpBase/retBytes/stackSize map correctly;
-- register arguments remain register arguments even though legacy `AddArg()` defaults them to non-register;
-- stack args map correctly;
-- locals map correctly;
-- an already-populated args/locals surface is rejected;
-- existing `procInfo->procSize` remains untouched.
+## Real legacy decompiler preflight — #101/#102
 
-## Legacy -> neutral metadata capture
+#101 (`9b69b2935e201407c539637a9bbbf5c87ef1f9ce`) proved a real active legacy session can construct:
 
-`CaptureLegacyProcedurePrototypeMetadata()` reads the prototype/stack surface of a real legacy procedure record back into neutral metadata.
+`TDecompileEnv -> TDecompiler -> Init() -> InitFlags()`
 
-It is deliberately read-only and excludes `procSize`.
+under MSVC x86 using a tiny RET procedure with explicit `procInfo->procSize = 1`.
 
-The roundtrip fixture proves:
-
-`neutral prototype -> legacy seed -> InfoRec/InfoProcInfo -> neutral prototype`
-
-with full scalar/argument/local equality and unchanged manually-seeded `procSize`.
-
-## Active legacy procedure slots
-
-`ApplyLegacyProcedureMetadataSeedToActiveSession()` creates a detached real `InfoRec`, populates it, then publishes it into the active `Infos[]` slot only after success.
-
-Safety rules:
-
-- active shared session required;
-- address must map to backed analysis data;
-- slot must be empty;
-- no `ProcStart` is synthesized by metadata publication;
-- no `procSize` is synthesized.
-
-`loadedInfoSlots` owns the published pointer and session reset cleans it up.
-
-## CFG -> legacy reconciliation
-
-`ApplyDiscoveredProceduresToActiveLegacySession()` bridges procedures already discovered by the neutral CFG into active legacy state.
-
-The design became idempotent after runtime evidence:
-
-- existing valid procedure `InfoRec` records are captured and reused untouched;
-- only empty procedure slots invoke the supplied metadata provider;
-- a non-procedure occupied slot rejects the batch;
-- mapped-position duplicates are rejected;
-- all new entries are preflighted before publication;
-- if a later publication fails, entries created by that batch are rolled back;
-- second execution over the same flow creates nothing and does not call the provider.
-
-The test specifically preserves an existing `ikFunc` with args, locals, flags and `procSize=77` while materializing only the missing callee.
-
-## CLI reconciliation
-
-`idr-cli.exe` now performs the CFG -> legacy procedure reconciliation in its real PE32 execution path.
-
-At present a newly-loaded CLI session normally has empty `Infos[]`, so conservative fallback metadata is `ikProc`; no Delphi prototype is invented. The reuse path remains available for later analysis stages that populate authoritative metadata before reconciliation.
-
-CLI invariants verify that every CFG procedure has a readable procedure-style legacy record after reconciliation.
-
-## Decompiler input model
-
-The first decompiler-facing model originally lived in the legacy wrapper and was then separated into a truly neutral builder.
-
-`IdrDecompilerInput.h` defines:
-
-- `ProcedureDecompileInput`
-- current procedure `ProcedureAnalysisInput`
-- current `ProcedurePrototypeMetadata`
-- unique direct-callee prototype entries.
-
-The neutral builder takes a caller-supplied `ProcedurePrototypeLookup`; therefore it does not depend on:
-
-- `InfoRec`;
-- `Infos[]`;
-- legacy bridge;
-- PE loader;
-- image globals.
-
-`IdrLegacyDecompilerInput.h` is now only a thin active-session lookup adapter.
-
-Direct calls to the same callee are deduplicated by callee address in the decompiler input while the original call-site remains available when resolution is needed.
-
-## Headless prototype policy
-
-`IdrHeadlessPrototypePolicy.h` defines:
-
-- `PrototypeResolutionStatus::Resolved`
-- `PrototypeResolutionStatus::Unavailable`
-- `PrototypeResolutionStatus::Rejected`
-
-and an injected `HeadlessPrototypeResolver`.
-
-Rules:
-
-- complete current metadata bypasses the resolver;
-- incomplete metadata without a resolver fails;
-- `Unavailable` fails;
-- `Rejected` fails;
-- `Resolved` still fails unless the returned prototype is complete;
-- no automatic fake return type or argument type is permitted.
-
-The neutral decompiler-input fixture forces resolver execution for both:
-
-1. an incomplete current function;
-2. an incomplete direct callee function.
-
-For a callee, the resolver receives both callee address and the actual call-site. Source metadata remains unchanged: resolution is read-time, not implicit persistence.
-
-## Legacy ManualInput inventory
-
-Prototype completion is only one interactive family. Source inspection shows `ManualInput()` is also used for cases including:
-
-- missing import return-byte information;
-- `@DispInvoke` paths;
-- unknown function types;
-- indirect-call questions;
-- some interface/virtual dispatch cases.
-
-Architecture decision: replace these with narrow explicit headless policies as they become runtime-reachable. Do not build a universal fake dialog layer.
-
-## Real legacy decompiler preflight
-
-### #101 runtime proof
-
-`9b69b2935e201407c539637a9bbbf5c87ef1f9ce` — `Exercise legacy decompiler preflight`
-
-A real active legacy session is constructed with a tiny RET procedure. A real procedure record is seeded, then given explicit `procInfo->procSize = 1`.
-
-The linked MSVC x86 core probe executes:
-
-`TDecompileEnv environment(address, procSize, record)`
-
-then:
-
-`TDecompiler decompiler(&environment)`
-
-then:
-
-`decompiler.Init(address)`
-
-then:
-
-`decompiler.InitFlags()`
-
-Runtime checks prove environment address/size, default stack size (`0x8000` when metadata stack size is zero), BP-based state and preservation of stored `procSize`.
-
-The probe intentionally stops before `TDecompiler::Decompile()`.
-
-This is the first runtime proof that the real legacy decompiler engine itself starts successfully under MSVC x86.
-
-### #102 extracted adapter
-
-`f321469aed6ebb641c4ae7438a5776f382f62ad5` — `Extract legacy decompiler preflight adapter`
-
-The proven sequence moved into:
+#102 (`f321469aed6ebb641c4ae7438a5776f382f62ad5`) extracted this into:
 
 - `portable/core/IdrLegacyDecompilerRunner.h`
 - `portable/core/IdrLegacyDecompilerRunner.cpp`
 
-Public result type:
+The public header exposes only portable types. Legacy decompiler classes remain implementation details.
 
-`LegacyDecompilerPreflightResult`
+## Explicit procedure-size policy — #103
 
-Current fields:
+#103:
 
-- `procedureSize`
-- `stackSize`
-- `bpBased`
-- `initialized`
+`c462472b64d015e8fd5da7f98dd4ecda99449028` — `Add explicit procedure size resolution policy`
 
-Public call:
+introduced `IdrProcedureSizePolicy.h`.
 
-`PreflightActiveLegacyProcedure(address, result)`
+Important types:
 
-The public header includes only portable core types. `TDecompiler`, `TDecompileEnv` and generated legacy headers remain implementation details in the `.cpp`.
+- `ProcedureSizeResolutionStatus::{Resolved, Unavailable, Rejected}`
+- `ProcedureSizeSource::{None, LegacyMetadata, HeadlessResolver}`
+- `ProcedureSizeResolutionRequest`
+- `ProcedureSizeResolutionResult`
+- `ResolvedProcedureSize`
+- `HeadlessProcedureSizeResolver`
 
-The runner rejects zero/negative `procSize`; this is deliberate.
+Rules:
 
-### Dedicated preflight workflow
+- `storedSize > 0` resolves immediately as `LegacyMetadata`;
+- resolver is bypassed when stored size exists;
+- zero stored size requires an explicit resolver;
+- rejected/unavailable/non-positive resolver result fails;
+- resolver-based size is not persisted into `InfoRec`;
+- preflight reports the effective size source.
 
-`.github/workflows/portable-legacy-decompiler-preflight.yml`
+Both the normal integration and the then-separate preflight workflow were reported green.
 
-was added to compile/link/run the extracted runner separately under stock `windows-latest` + MSVC x86.
+## Unified legacy size source — #104
 
-Its first reported run was green, independently proving the extracted adapter rather than only the inline #101 probe.
+#104:
 
-The workflow is intended as a temporary isolation proof. Once stable, fold the runner into the primary integration workflow and remove redundant coverage if appropriate.
+`cb8cda462f6576d4ad2de9d2ea7f88362400de57` — `Unify legacy procedure size resolution`
 
-## Procedure size remains a hard boundary
+removed a dangerous transitional fallback in `PortableEstimateProcSize()`.
 
-Legacy behavior demonstrates that `procInfo->procSize` is not interchangeable with neutral CFG observed span.
+Before #104, missing stored size could be synthesized from the next `ProcStart`, or ultimately from the remainder of the image. This was not equivalent to legacy authoritative `procSize` and could have silently fed an invented extent into the decompiler.
 
-Known evidence:
+Current portable rule is:
 
-- `AnalyzeProc1` writes `procSize` on selected terminating paths;
-- nearby `cfProcEnd` writes are commonly commented out;
-- `GetProcSize()` returns stored `procSize` first;
-- if missing, legacy code calls GUI-owned `EstimateProcSize()`;
-- `TDecompileEnv` requires an explicit size.
+`stored procSize -> session HeadlessProcedureSizeResolver -> 0`
 
-Therefore:
+The active session exposes:
 
-- do not synthesize `ProcEnd`;
-- do not copy `observedSpan` into `procSize`;
-- do not silently call the legacy GUI estimator from the portable path;
-- preflight currently refuses procedures with no authoritative size.
+- `SetLegacyProcedureSizeResolver(...)`
+- `LegacyProcedureSizeResolver()`
 
-A headless evidence-backed size source is now one of the immediate blockers before broad real-decompiler execution.
+and session reset clears the resolver.
+
+`PreflightActiveLegacyProcedure()` still accepts an explicitly injected resolver for focused testing; when none is supplied it uses the session resolver. `PortableEstimateProcSize()` uses the same session policy.
+
+The runtime probe plants a later `ProcStart` specifically to prove the old hidden fallback no longer creates a size.
+
+Both #104 CI paths were reported green.
+
+## CI consolidation — #105
+
+#105:
+
+`fc18fca5e3936a9997977fd6ae59920ae412d60a` — `Fold legacy decompiler preflight into integration`
+
+was deliberately mechanical CI consolidation with no production decompiler behavior change.
+
+It moved compilation/link/execution of `IdrLegacyDecompilerRunner.cpp` and `idr_legacy_decompiler_runner_probe.cpp` into `.github/workflows/portable-core-integration.yml` and removed the temporary `.github/workflows/portable-legacy-decompiler-preflight.yml`.
+
+Run #105 was reported green, so the isolated preflight workflow phase is complete and the project again has one primary CI line.
+
+## First full legacy Decompile() attempt — #106
+
+#106:
+
+`77ceedc17fa238317489a19f9a01f962c865ba43` — `Run minimal legacy decompiler loop`
+
+moves beyond preflight for the first time.
+
+The intended fixture is deliberately minimal: one byte `C3` (`RET`) with explicit stored `procSize = 1`.
+
+The intended execution sequence is:
+
+1. validate session / real procedure `InfoRec`;
+2. resolve procedure size;
+3. construct `TDecompileEnv`;
+4. construct `TDecompiler`;
+5. `Init(address)`;
+6. `InitFlags()`;
+7. `SetStop(address + size)`;
+8. `Decompile(address, 0, nullptr)`.
+
+The probe also installs a counting `manualInput` service and expects zero calls. It intends to verify that `Decompile()` returns, `WasRet` is true, and stored `procSize` remains unchanged.
+
+Run #106 is RED. Therefore the new `Decompile()` loop is not yet runtime-proven. The exact failing stage is unknown until the failed job log is obtained. No corrective code should be based on speculation.
+
+## ManualInput inventory
+
+Prototype completion is only one interactive family. Source inspection has already identified additional `ManualInput()` paths including missing import return-byte data, `@DispInvoke`, unknown function types, indirect calls and some virtual/interface dispatch cases.
+
+Architecture decision remains: add narrow explicit headless policies only for runtime-reached families. Do not build a generic fake-GUI dialog shim.
+
+## Procedure-size / ProcEnd invariant
+
+Do not synthesize `ProcEnd` and do not map CFG `observedSpan` into `procInfo->procSize`.
+
+Legacy evidence shows stored `procSize` has separate semantics and `TDecompileEnv` requires a concrete size. The portable path now makes any non-stored size source explicit through `HeadlessProcedureSizeResolver`.
+
+No implicit next-`ProcStart`, image-remainder or observed-span fallback is allowed.
+
+## GitHub Actions discovery state
+
+Preferred push-run discovery procedure:
+
+1. call `GitHub.fetch` on `/repos/jonsan1969/IDR/actions/runs?branch=agent%2Fportable-cli&event=push&per_page=20`;
+2. locate the requested `run_number`;
+3. verify its `head_sha` against the pushed commit;
+4. take the internal run `id`;
+5. call `fetch_workflow_run_jobs`;
+6. only if failed, call `fetch_workflow_job_logs` for the failed job exactly once.
+
+Current session limitation:
+
+- the `/actions/runs` collection endpoint returns `endpoint not allowed` / HTTP 400;
+- `api_tool.list_resources` with `workflow run` exposes no separate branch/push run-list function;
+- `fetch_commit_workflow_runs` is explicitly PR-run-only and is not a substitute;
+- with a known `run_id`, `fetch_workflow_run_jobs` and `fetch_workflow_job_logs` remain usable.
+
+Before asking the user for a run id in future sessions, first retry the branch+event collection route and then capability discovery (`workflow run`, `actions`, or `runs`). If still unavailable, state explicitly that the session connector lacks run-discovery while downstream run-id tools remain available.
+
+Do not start by attempting run discovery through commit SHA.
 
 ## Compatibility risks
 
 ### Borland String indexing
 
-Borland `String` is 1-based; `std::string` is 0-based. Continue auditing only runtime-reached direct indexing rather than globally rewriting source semantics.
+Borland `String` is 1-based; `std::string` is 0-based. Continue auditing runtime-reached indexing instead of speculative global rewrites.
 
 ### Variant / WideString / Currency / Comp
 
-Compatibility support is transitional and reached-case driven.
+Compatibility support remains transitional and reached-case driven.
 
-### Flags range fidelity
+### Flag boundary fidelity
 
-Exact end-boundary behavior of old `SetFlags`/`ClearFlags` still needs fidelity checks when deeper code depends on it.
+Exact old `SetFlags` / `ClearFlags` end-boundary behavior remains a targeted fidelity issue.
 
 ### Indirect control flow
 
-Neutral CFG currently focuses on direct targets. Indirect calls/jumps, switches/jump tables and richer x86 semantics remain outside the proven engine.
+Neutral CFG still focuses on direct targets. Indirect calls/jumps and jump tables remain outside the proven path.
 
-### Metadata mutation during decompilation
+### Decompiler mutation
 
-Legacy decompiler routines may add locals and otherwise mutate `InfoRec/procInfo`. Any future neutral decompile result boundary must make mutation/ownership explicit.
+Legacy decompiler routines may add locals and mutate procedure/flag state. A neutral full-decompile result boundary must make mutation and ownership explicit.
 
 ## Immediate technical frontier
 
-The next work should proceed in this order unless compiler/runtime evidence changes the plan:
-
-1. fold the extracted `IdrLegacyDecompilerRunner` into the normal integration workflow and avoid permanent duplicate CI if the dedicated proof is no longer needed;
-2. establish a headless procedure-size policy/source based on legacy evidence instead of `observedSpan` substitution;
-3. create a deliberately tiny no-interaction procedure fixture suitable for the first controlled call to real `TDecompiler::Decompile()`;
-4. stop immediately on the first runtime-reached unresolved interactive dependency and replace that one family with a narrow headless policy;
-5. capture decompiler result/state behind neutral portable types;
-6. inspect mutations to locals/args/flags/Infos and lock their semantics with fixtures;
-7. continue Borland RTL/String audits only on runtime-reached paths;
-8. move to controlled Delphi Win32 fixtures and compare against original IDR;
-9. eventually expose deterministic decompiler output from `idr-cli.exe` and publish `idr-cli.exe + dis.dll` as an Actions artifact.
+1. Obtain #106 run/job evidence using the preferred branch push-run discovery when connector capability permits.
+2. Fetch the failed #106 job log exactly once.
+3. Fix only the evidenced failure.
+4. Get the one-byte RET `Decompile()` path green with zero `ManualInput()` calls.
+5. Extract its result/state behind a neutral API rather than exposing legacy engine classes.
+6. Advance to a slightly richer no-interaction procedure.
+7. Stop on the first runtime-reached unresolved interactive dependency and model that family explicitly.
+8. Continue controlled Delphi Win32 fixture comparison against original IDR.
+9. Eventually expose deterministic output from `idr-cli.exe` and publish `idr-cli.exe + dis.dll` as an Actions artifact.
 
 ## Working rules
 
@@ -388,9 +253,14 @@ The next work should proceed in this order unless compiler/runtime evidence chan
 - One coherent architecture commit per step.
 - Frozen branches stay frozen; `main` stays untouched.
 - Never push over an active relevant workflow.
-- Green runs: status only, no log harvesting.
+- Green runs: status only; no log harvesting.
 - Red runs: metadata -> jobs -> failed log exactly once.
 - GitHub writes use `create_blob -> create_tree -> create_commit -> update_ref`.
+- Do not intentionally use `create_file` or `update_file` for branch writes.
 - Preserve original legacy sources; generated portable copies/adapters carry transitional changes unless deliberate structural porting requires otherwise.
 - No PR/merge to `main` yet.
 - Keep this journal synchronized with major runtime milestones.
+
+## Write-history note
+
+A number of earlier turns accidentally attempted `create_file` / `update_file` calls against deliberately nonexistent refs such as `__invalid__` or `__never__`. Those calls returned 404 and produced no repository writes. Actual branch-changing commits discussed here were made through the atomic git-object sequence unless explicitly documented otherwise. Do not use those contents-API calls as probes going forward.

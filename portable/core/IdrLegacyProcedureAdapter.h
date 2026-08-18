@@ -46,6 +46,57 @@ inline bool ApplyLegacyProcedureMetadataSeed(InfoRec &record,
     return true;
 }
 
+// Read the prototype/stack surface already known by one real legacy procedure
+// record into the neutral metadata model. This is deliberately read-only and
+// excludes legacy procSize: stored procedure extent has a separate lifecycle
+// from prototype metadata and must not be conflated with observed CFG span.
+inline bool CaptureLegacyProcedurePrototypeMetadata(const InfoRec &record,
+                                                    ProcedurePrototypeMetadata &metadata) {
+    metadata = {};
+    if (record.kind < ikRefine || record.kind > ikFunc || !record.procInfo) return false;
+
+    metadata.kind = record.kind;
+    metadata.returnType = record.type;
+    metadata.flags = record.procInfo->flags;
+    metadata.bpBase = record.procInfo->bpBase;
+    metadata.retBytes = record.procInfo->retBytes;
+    metadata.stackSize = record.procInfo->stackSize;
+
+    if (record.procInfo->args) {
+        metadata.arguments.reserve(static_cast<std::size_t>(record.procInfo->args->Count));
+        for (int i = 0; i < record.procInfo->args->Count; ++i) {
+            PARGINFO argument = static_cast<PARGINFO>(record.procInfo->args->Items[static_cast<std::size_t>(i)]);
+            if (!argument) {
+                metadata = {};
+                return false;
+            }
+            metadata.arguments.push_back({argument->Tag,
+                                          argument->Register,
+                                          argument->Ndx,
+                                          argument->Size,
+                                          argument->Name,
+                                          argument->TypeDef});
+        }
+    }
+
+    if (record.procInfo->locals) {
+        metadata.locals.reserve(static_cast<std::size_t>(record.procInfo->locals->Count));
+        for (int i = 0; i < record.procInfo->locals->Count; ++i) {
+            PLOCALINFO local = static_cast<PLOCALINFO>(record.procInfo->locals->Items[static_cast<std::size_t>(i)]);
+            if (!local) {
+                metadata = {};
+                return false;
+            }
+            metadata.locals.push_back({local->Ofs,
+                                       local->Size,
+                                       local->Name,
+                                       local->TypeDef});
+        }
+    }
+
+    return true;
+}
+
 // Install one fully prepared procedure record into the currently active loaded
 // PE session. Build and populate the record detached first, then publish it to
 // Infos[] only after success so a failed adaptation cannot leave a partial slot.

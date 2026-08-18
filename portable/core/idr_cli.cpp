@@ -144,6 +144,21 @@ int wmain(int argc, wchar_t **argv) {
         }
     }
 
+    if (flow.procedures.size() != flow.candidates.size() + 1) {
+        std::cerr << "idr-cli: procedure summary count does not match analyzed procedures\n";
+        idr::core::ResetLegacyLoadedPeSession();
+        return 10;
+    }
+    for (const auto &procedure : flow.procedures) {
+        if (procedure.observedStart == 0 ||
+            procedure.observedEndExclusive <= procedure.observedStart ||
+            procedure.observedSpan != static_cast<std::size_t>(procedure.observedEndExclusive - procedure.observedStart)) {
+            std::cerr << "idr-cli: procedure summary has invalid observed instruction span\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 11;
+        }
+    }
+
     std::cout << "IDR portable CLI\n";
     std::cout << "file=" << target.u8string() << '\n';
     PrintHex("image-base", image.imageBase);
@@ -203,6 +218,19 @@ int wmain(int argc, wchar_t **argv) {
         }
     }
 
+    for (std::size_t i = 0; i < flow.procedures.size(); ++i) {
+        const auto &procedure = flow.procedures[i];
+        std::cout << "procedure[" << i << "] address=0x"
+                  << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << procedure.address
+                  << " observed-start=0x" << std::setw(8) << procedure.observedStart
+                  << " observed-end-exclusive=0x" << std::setw(8) << procedure.observedEndExclusive
+                  << std::dec << std::setfill(' ')
+                  << " observed-span=" << procedure.observedSpan
+                  << " blocks=" << procedure.blockCount
+                  << " instructions=" << procedure.instructionCount
+                  << " incoming-calls=" << procedure.incomingCallCount << '\n';
+    }
+
     std::cout << "trace-count=" << flow.entryTrace.size() << '\n';
     std::cout << "entry-block-count=" << flow.entryBlocks.size() << '\n';
     std::cout << "edge-count=" << flow.edges.size() << '\n';
@@ -214,6 +242,7 @@ int wmain(int argc, wchar_t **argv) {
     std::cout << "candidate-block-count=" << candidateBlockCount << '\n';
     std::cout << "candidate-instruction-count=" << candidateInstructionCount << '\n';
     std::cout << "procedure-start-count=" << (flow.candidates.size() + 1) << '\n';
+    std::cout << "procedure-summary-count=" << flow.procedures.size() << '\n';
     std::cout << "entry-flags=0x"
               << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << entryFlags
               << std::dec << std::setfill(' ') << '\n';

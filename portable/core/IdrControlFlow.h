@@ -72,6 +72,9 @@ struct ProcedureSummary {
     std::size_t branchTakenEdgeCount = 0;
     std::size_t fallThroughEdgeCount = 0;
     std::size_t incomingCallCount = 0;
+    DWord observedStart = 0;
+    DWord observedEndExclusive = 0;
+    std::size_t observedSpan = 0;
 };
 
 struct ControlFlowOptions {
@@ -263,6 +266,23 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
         summary.address = address;
         summary.blockCount = blocks.size();
         summary.instructionCount = instructions.size();
+        if (!instructions.empty()) {
+            DWord observedStart = (std::numeric_limits<DWord>::max)();
+            DWord observedEndExclusive = 0;
+            for (const auto &instruction : instructions) {
+                if (instruction.address < observedStart) observedStart = instruction.address;
+                if (instruction.length <= 0) continue;
+                const auto length = static_cast<DWord>(instruction.length);
+                if (length > (std::numeric_limits<DWord>::max)() - instruction.address) continue;
+                const DWord endExclusive = instruction.address + length;
+                if (endExclusive > observedEndExclusive) observedEndExclusive = endExclusive;
+            }
+            if (observedStart != (std::numeric_limits<DWord>::max)() && observedEndExclusive >= observedStart) {
+                summary.observedStart = observedStart;
+                summary.observedEndExclusive = observedEndExclusive;
+                summary.observedSpan = static_cast<std::size_t>(observedEndExclusive - observedStart);
+            }
+        }
         for (const auto &edge : result.edges) {
             if (edge.procedure != address) continue;
             switch (edge.kind) {

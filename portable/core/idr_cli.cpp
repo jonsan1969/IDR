@@ -3,6 +3,7 @@
 #include "IdrLegacyBridge.h"
 #include "IdrLegacyCompat.h"
 #include "IdrLegacyProcedureAdapter.h"
+#include "IdrLegacyDecompilerInput.h"
 #include "IdrPeLoader.h"
 #include "../../Disasm.h"
 
@@ -199,6 +200,25 @@ int wmain(int argc, wchar_t **argv) {
         }
     }
 
+    std::size_t decompileInputCount = 0;
+    std::size_t decompileCalleePrototypeCount = 0;
+    for (const auto &procedure : flow.procedures) {
+        idr::core::ProcedureDecompileInput decompileInput;
+        if (!idr::core::BuildProcedureDecompileInputFromActiveLegacySession(
+                flow, procedure.address, ikFunc, decompileInput)) {
+            std::cerr << "idr-cli: cannot build decompiler input from reconciled procedure metadata\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 16;
+        }
+        if (decompileInput.analysis.summary.address != procedure.address) {
+            std::cerr << "idr-cli: decompiler input procedure does not match CFG procedure\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 17;
+        }
+        ++decompileInputCount;
+        decompileCalleePrototypeCount += decompileInput.callees.size();
+    }
+
     std::cout << "IDR portable CLI\n";
     std::cout << "file=" << target.u8string() << '\n';
     PrintHex("image-base", image.imageBase);
@@ -285,6 +305,8 @@ int wmain(int argc, wchar_t **argv) {
     std::cout << "procedure-summary-count=" << flow.procedures.size() << '\n';
     std::cout << "legacy-procedure-installed-count=" << installedProcedures.size() << '\n';
     std::cout << "legacy-procedure-reused-count=" << reusedProcedures.size() << '\n';
+    std::cout << "decompile-input-count=" << decompileInputCount << '\n';
+    std::cout << "decompile-callee-prototype-count=" << decompileCalleePrototypeCount << '\n';
     std::cout << "entry-flags=0x"
               << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << entryFlags
               << std::dec << std::setfill(' ') << '\n';

@@ -12,8 +12,13 @@ int main() {
     constexpr DWord kTargetB = kBase + 0x20u;
 
     std::vector<Byte> image(0x40, 0);
-    SetImageSegments({image.data(), image.size(), kBase}, {{kBase, static_cast<DWord>(image.size()), 0}});
     AnalysisState analysis(image.size());
+
+    const AddressMapper addressToOffset = [&](DWord address) {
+        if (address < kBase) return -1;
+        const DWord offset = address - kBase;
+        return offset < image.size() ? static_cast<int>(offset) : -1;
+    };
 
     const InstructionDecoder decoder = [](DWord address, DecodedInstruction &decoded) {
         constexpr DWord base = 0x00401000u;
@@ -55,7 +60,7 @@ int main() {
     };
 
     ControlFlowResult result;
-    if (!AnalyzeBoundedControlFlow(kBase, analysis, decoder, {8, 8, 8}, result)) {
+    if (!AnalyzeBoundedControlFlow(kBase, analysis, decoder, addressToOffset, {8, 8, 8}, result)) {
         std::cerr << "control-flow probe failed: " << result.error << '\n';
         return 1;
     }
@@ -134,10 +139,10 @@ int main() {
         return 4;
     }
 
-    const auto branchOffset = static_cast<std::size_t>(AddressToOffset(kBranchTarget));
-    const auto aOffset = static_cast<std::size_t>(AddressToOffset(kTargetA));
-    const auto bOffset = static_cast<std::size_t>(AddressToOffset(kTargetB));
-    const auto entryOffset = static_cast<std::size_t>(AddressToOffset(kBase));
+    const auto branchOffset = static_cast<std::size_t>(addressToOffset(kBranchTarget));
+    const auto aOffset = static_cast<std::size_t>(addressToOffset(kTargetA));
+    const auto bOffset = static_cast<std::size_t>(addressToOffset(kTargetB));
+    const auto entryOffset = static_cast<std::size_t>(addressToOffset(kBase));
     const auto requiredTargetFlags = CodeFlags::Loc | CodeFlags::Instruction | CodeFlags::Code;
     const auto requiredProcedureFlags = requiredTargetFlags | CodeFlags::ProcStart;
 

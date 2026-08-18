@@ -103,10 +103,15 @@ int wmain(int argc, wchar_t **argv) {
         return true;
     };
 
+    const idr::core::AddressMapper addressToOffset = [](idr::core::DWord address) {
+        return idr::core::AddressToOffset(address);
+    };
+
     idr::core::ControlFlowResult flow;
     idr::core::ControlFlowOptions options;
     auto &analysis = idr::core::LegacyAnalysisState();
-    if (!idr::core::AnalyzeBoundedControlFlow(session.entryPoint, analysis, decoder, options, flow)) {
+    if (!idr::core::AnalyzeBoundedControlFlow(session.entryPoint, analysis, decoder,
+                                               addressToOffset, options, flow)) {
         std::cerr << "idr-cli: control-flow analysis failed: " << flow.error << '\n';
         idr::core::ResetLegacyLoadedPeSession();
         return 7;

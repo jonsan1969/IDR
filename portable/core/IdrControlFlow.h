@@ -1,7 +1,6 @@
 #pragma once
 
 #include "IdrAnalysisState.h"
-#include "IdrImageContext.h"
 
 #include <cstddef>
 #include <deque>
@@ -26,6 +25,7 @@ struct DecodedInstruction {
 };
 
 using InstructionDecoder = std::function<bool(DWord, DecodedInstruction &)>;
+using AddressMapper = std::function<int(DWord)>;
 
 struct TraceInstruction {
     DWord address = 0;
@@ -95,6 +95,7 @@ struct ControlFlowResult {
 inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
                                       AnalysisState &analysis,
                                       const InstructionDecoder &decoder,
+                                      const AddressMapper &addressToOffset,
                                       const ControlFlowOptions &options,
                                       ControlFlowResult &result) {
     result = {};
@@ -103,6 +104,7 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
         return false;
     };
     if (!decoder) return fail("decoder is not available");
+    if (!addressToOffset) return fail("address mapper is not available");
     if (options.traceLimit == 0) return fail("trace limit is zero");
     if (options.blockLimit == 0) return fail("block limit is zero");
 
@@ -112,7 +114,7 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
 
     const auto enqueueCandidate = [&](DWord address) {
         if (result.discoveredCandidateCount >= options.candidateLimit) return;
-        if (AddressToOffset(address) < 0) return;
+        if (addressToOffset(address) < 0) return;
         if (!seenCandidates.insert(address).second) return;
         candidateQueue.push_back(address);
         ++result.discoveredCandidateCount;
@@ -127,7 +129,7 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
 
         const auto enqueueBlock = [&](DWord address) {
             if (seenBlocks.size() >= options.blockLimit) return;
-            if (AddressToOffset(address) < 0) return;
+            if (addressToOffset(address) < 0) return;
             if (!seenBlocks.insert(address).second) return;
             blockQueue.push_back(address);
             ++result.discoveredBlockCount;
@@ -147,7 +149,7 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
                 if (address != blockAddress && seenBlocks.find(address) != seenBlocks.end()) break;
                 if (!decodedAddresses.insert(address).second) break;
 
-                const int offset = AddressToOffset(address);
+                const int offset = addressToOffset(address);
                 if (offset < 0) break;
 
                 DecodedInstruction decoded;
@@ -165,7 +167,7 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
                 flatTrace.push_back(traced);
 
                 if ((decoded.call || decoded.branch) && decoded.target != 0) {
-                    const int targetOffset = AddressToOffset(decoded.target);
+                    const int targetOffset = addressToOffset(decoded.target);
                     if (targetOffset >= 0) {
                         if (!analysis.SetFlag(CodeFlags::Loc, static_cast<std::size_t>(targetOffset)))
                             return fail("cannot mark control-flow target state");
@@ -189,7 +191,7 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
                 const DWord fallThrough = address + static_cast<DWord>(decoded.length);
 
                 if (decoded.branch) {
-                    if (decoded.conditional && AddressToOffset(fallThrough) >= 0) {
+                    if (decoded.conditional && addressToOffset(fallThrough) >= 0) {
                         result.edges.push_back({procedureAddress, address, fallThrough,
                                                 ControlFlowEdgeKind::FallThrough});
                         enqueueBlock(fallThrough);
@@ -204,7 +206,7 @@ inline bool AnalyzeBoundedControlFlow(DWord entryPoint,
         }
 
         if (flatTrace.empty()) return false;
-        const int procedureOffset = AddressToOffset(procedureAddress);
+        const int procedureOffset = addressToOffset(procedureAddress);
         if (procedureOffset < 0 ||
             !analysis.SetFlag(CodeFlags::ProcStart, static_cast<std::size_t>(procedureOffset)))
             return fail("cannot mark procedure start state");

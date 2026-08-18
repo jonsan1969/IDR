@@ -4,15 +4,10 @@
 #include "IdrDecompilerModel.h"
 #include "IdrImageContext.h"
 #include "IdrInstructionNav.h"
+#include "IdrLegacyProcedureAdapter.h"
 
-#include <Windows.h>
 #include <array>
-#include <cstdint>
 #include <iostream>
-
-using Byte = std::uint8_t;
-using Word = std::uint16_t;
-using DWord = std::uint32_t;
 
 #include "../../Disasm.h"
 
@@ -110,11 +105,46 @@ int main() {
     if (idr::core::GetNearestDownInstruction(decoded, disasm, 0) != 1) return 50;
     if (idr::core::GetNearestDownInstructionMatching(decoded, disasm, 0, "ret") != 8) return 51;
 
+    idr::core::ProcedurePrototypeMetadata prototype;
+    prototype.kind = ikFunc;
+    prototype.returnType = "Integer";
+    prototype.flags = PF_BPBASED | 1u;
+    prototype.bpBase = 8;
+    prototype.retBytes = 4;
+    prototype.stackSize = 64;
+    prototype.arguments.push_back({0x21, true, 0, 4, "Value", "Integer"});
+    prototype.arguments.push_back({0x22, false, 8, 4, "Other", "Pointer"});
+    prototype.locals.push_back({-4, 4, "Temp", "Integer"});
+
+    idr::core::LegacyProcedureMetadataSeed seed;
+    if (!idr::core::BuildLegacyProcedureMetadataSeed(prototype, ikFunc, seed)) return 52;
+
+    InfoRec legacyRecord(-1, ikProc);
+    if (!legacyRecord.procInfo) return 53;
+    legacyRecord.procInfo->procSize = 77;
+    if (!idr::core::ApplyLegacyProcedureMetadataSeed(legacyRecord, seed)) return 54;
+    if (legacyRecord.kind != ikFunc || legacyRecord.type != "Integer") return 55;
+    if (legacyRecord.procInfo->flags != prototype.flags ||
+        legacyRecord.procInfo->bpBase != 8 ||
+        legacyRecord.procInfo->retBytes != 4 ||
+        legacyRecord.procInfo->stackSize != 64 ||
+        legacyRecord.procInfo->procSize != 77) return 56;
+    if (!legacyRecord.procInfo->args || legacyRecord.procInfo->args->Count != 2) return 57;
+    PARGINFO firstArg = legacyRecord.procInfo->GetArg(0);
+    PARGINFO secondArg = legacyRecord.procInfo->GetArg(1);
+    if (!firstArg || !secondArg || !firstArg->Register || secondArg->Register ||
+        firstArg->Ndx != 0 || secondArg->Ndx != 8 ||
+        firstArg->TypeDef != "Integer" || secondArg->TypeDef != "Pointer") return 58;
+    PLOCALINFO local = legacyRecord.procInfo->GetLocal(-4);
+    if (!local || local->Name != "Temp" || local->TypeDef != "Integer") return 59;
+    if (idr::core::ApplyLegacyProcedureMetadataSeed(legacyRecord, seed)) return 60;
+
     const auto op = disasm.GetOp(const_cast<char *>("mov"));
     std::cout << "portable-core link probe: OP_MOV=" << static_cast<int>(op)
               << ", decompiler-condition=" << idr::core::DirectCondition('E')
               << ", name=" << idr::core::DefaultProcName(0x401000)
               << ", fs=" << idr::core::GetNearestUpPrefixFs(decoded, disasm, 8)
-              << ", segmented=00402002->6\n";
-    return op == OP_MOV ? 0 : 52;
+              << ", segmented=00402002->6"
+              << ", legacy-procedure-seed=ok\n";
+    return op == OP_MOV ? 0 : 61;
 }

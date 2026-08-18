@@ -3,9 +3,11 @@
 #include <iostream>
 #include <vector>
 
-int main() {
-    using namespace idr::core;
+namespace {
 
+using namespace idr::core;
+
+bool RunEstablishedFixture() {
     constexpr DWord kBase = 0x00401000u;
     constexpr DWord kBranchTarget = kBase + 0x09u;
     constexpr DWord kTargetA = kBase + 0x10u;
@@ -62,7 +64,7 @@ int main() {
     ControlFlowResult result;
     if (!AnalyzeBoundedControlFlow(kBase, analysis, decoder, addressToOffset, {8, 8, 8}, result)) {
         std::cerr << "control-flow probe failed: " << result.error << '\n';
-        return 1;
+        return false;
     }
 
     std::size_t callEdges = 0;
@@ -96,7 +98,7 @@ int main() {
         callEdges != 3 || branchTakenEdges != 1 || fallThroughEdges != 1 ||
         entryOwnedEdges != 3 || targetAOwnedEdges != 2 || targetBOwnedEdges != 0 || unknownOwnedEdges != 0) {
         std::cerr << "control-flow probe produced unexpected graph shape\n";
-        return 2;
+        return false;
     }
 
     if (result.procedures.size() != 3 ||
@@ -122,7 +124,7 @@ int main() {
         result.procedures[2].fallThroughEdgeCount != 0 ||
         result.procedures[2].incomingCallCount != 2) {
         std::cerr << "control-flow probe produced unexpected procedure summaries\n";
-        return 3;
+        return false;
     }
 
     if (result.callXrefs.size() != 3 ||
@@ -136,7 +138,7 @@ int main() {
         result.callXrefs[2].callSite != kTargetA + 5 ||
         result.callXrefs[2].callee != kTargetB) {
         std::cerr << "control-flow probe produced unexpected call xrefs\n";
-        return 4;
+        return false;
     }
 
     const auto branchOffset = static_cast<std::size_t>(addressToOffset(kBranchTarget));
@@ -154,7 +156,7 @@ int main() {
         (analysis.Flags()[aOffset] & requiredProcedureFlags) != requiredProcedureFlags ||
         (analysis.Flags()[bOffset] & requiredProcedureFlags) != requiredProcedureFlags) {
         std::cerr << "control-flow probe produced unexpected analysis flags\n";
-        return 5;
+        return false;
     }
 
     std::cout << "neutral-control-flow=ok\n";
@@ -173,5 +175,138 @@ int main() {
     std::cout << "entry-owned-edge-count=" << entryOwnedEdges << '\n';
     std::cout << "target-a-owned-edge-count=" << targetAOwnedEdges << '\n';
     std::cout << "target-b-owned-edge-count=" << targetBOwnedEdges << '\n';
+    return true;
+}
+
+bool RunRichGraphFixture() {
+    constexpr DWord kBase = 0x00402000u;
+    constexpr DWord kPathA = kBase + 0x10u;
+    constexpr DWord kJoin = kBase + 0x20u;
+    constexpr DWord kLoopBody = kBase + 0x30u;
+    constexpr DWord kInvalidTarget = kBase + 0x80u;
+
+    std::vector<Byte> image(0x40, 0);
+    AnalysisState analysis(image.size());
+
+    const AddressMapper addressToOffset = [&](DWord address) {
+        if (address < kBase) return -1;
+        const DWord offset = address - kBase;
+        return offset < image.size() ? static_cast<int>(offset) : -1;
+    };
+
+    const InstructionDecoder decoder = [](DWord address, DecodedInstruction &decoded) {
+        constexpr DWord base = 0x00402000u;
+        constexpr DWord pathA = base + 0x10u;
+        constexpr DWord join = base + 0x20u;
+        constexpr DWord loopBody = base + 0x30u;
+        constexpr DWord invalidTarget = base + 0x80u;
+        decoded = {};
+        switch (address) {
+            case base:
+                decoded = {2, "jz", "jz PathA", false, true, true, false, pathA};
+                return true;
+            case base + 2:
+                decoded = {2, "jmp", "jmp Join", false, true, false, false, join};
+                return true;
+            case pathA:
+                decoded = {2, "jmp", "jmp Join", false, true, false, false, join};
+                return true;
+            case join:
+                decoded = {2, "jnz", "jnz LoopBody", false, true, true, false, loopBody};
+                return true;
+            case join + 2:
+                decoded = {5, "call", "call InvalidTarget", true, false, false, false, invalidTarget};
+                return true;
+            case join + 7:
+                decoded = {2, "jmp", "jmp InvalidTarget", false, true, false, false, invalidTarget};
+                return true;
+            case loopBody:
+                decoded = {2, "jmp", "jmp Join", false, true, false, false, join};
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    ControlFlowResult result;
+    if (!AnalyzeBoundedControlFlow(kBase, analysis, decoder, addressToOffset, {8, 8, 8}, result)) {
+        std::cerr << "rich control-flow probe failed: " << result.error << '\n';
+        return false;
+    }
+
+    std::size_t callEdges = 0;
+    std::size_t branchTakenEdges = 0;
+    std::size_t fallThroughEdges = 0;
+    std::size_t joinIncomingEdges = 0;
+    std::size_t backEdges = 0;
+    std::size_t invalidEdges = 0;
+    for (const auto &edge : result.edges) {
+        switch (edge.kind) {
+            case ControlFlowEdgeKind::Call: ++callEdges; break;
+            case ControlFlowEdgeKind::BranchTaken: ++branchTakenEdges; break;
+            case ControlFlowEdgeKind::FallThrough: ++fallThroughEdges; break;
+        }
+        if (edge.to == kJoin) ++joinIncomingEdges;
+        if (edge.from == kLoopBody && edge.to == kJoin && edge.kind == ControlFlowEdgeKind::BranchTaken)
+            ++backEdges;
+        if (edge.to == kInvalidTarget) ++invalidEdges;
+    }
+
+    if (result.entryBlocks.size() != 6 ||
+        result.entryTrace.size() != 7 ||
+        result.candidates.size() != 0 ||
+        result.discoveredCandidateCount != 0 ||
+        result.edges.size() != 7 ||
+        callEdges != 0 || branchTakenEdges != 5 || fallThroughEdges != 2 ||
+        joinIncomingEdges != 3 || backEdges != 1 || invalidEdges != 0) {
+        std::cerr << "rich control-flow probe produced unexpected graph shape\n";
+        return false;
+    }
+
+    if (result.callXrefs.size() != 0 ||
+        result.procedures.size() != 1 ||
+        result.procedures[0].address != kBase ||
+        result.procedures[0].blockCount != 6 ||
+        result.procedures[0].instructionCount != 7 ||
+        result.procedures[0].callEdgeCount != 0 ||
+        result.procedures[0].branchTakenEdgeCount != 5 ||
+        result.procedures[0].fallThroughEdgeCount != 2 ||
+        result.procedures[0].incomingCallCount != 0) {
+        std::cerr << "rich control-flow probe produced unexpected procedure summary\n";
+        return false;
+    }
+
+    const auto baseOffset = static_cast<std::size_t>(addressToOffset(kBase));
+    const auto pathAOffset = static_cast<std::size_t>(addressToOffset(kPathA));
+    const auto joinOffset = static_cast<std::size_t>(addressToOffset(kJoin));
+    const auto loopOffset = static_cast<std::size_t>(addressToOffset(kLoopBody));
+    const auto invalidCallOffset = static_cast<std::size_t>(addressToOffset(kJoin + 2));
+
+    if (!analysis.IsFlagSet(CodeFlags::ProcStart, baseOffset) ||
+        analysis.IsFlagSet(CodeFlags::ProcStart, pathAOffset) ||
+        analysis.IsFlagSet(CodeFlags::ProcStart, joinOffset) ||
+        analysis.IsFlagSet(CodeFlags::ProcStart, loopOffset) ||
+        !analysis.IsFlagSet(CodeFlags::Loc, pathAOffset) ||
+        !analysis.IsFlagSet(CodeFlags::Loc, joinOffset) ||
+        !analysis.IsFlagSet(CodeFlags::Loc, loopOffset) ||
+        !analysis.IsFlagSet(CodeFlags::Call, invalidCallOffset)) {
+        std::cerr << "rich control-flow probe produced unexpected analysis flags\n";
+        return false;
+    }
+
+    std::cout << "rich-control-flow=ok\n";
+    std::cout << "rich-block-count=" << result.entryBlocks.size() << '\n';
+    std::cout << "rich-edge-count=" << result.edges.size() << '\n';
+    std::cout << "rich-join-incoming-edge-count=" << joinIncomingEdges << '\n';
+    std::cout << "rich-back-edge-count=" << backEdges << '\n';
+    std::cout << "rich-invalid-edge-count=" << invalidEdges << '\n';
+    return true;
+}
+
+} // namespace
+
+int main() {
+    if (!RunEstablishedFixture()) return 1;
+    if (!RunRichGraphFixture()) return 2;
     return 0;
 }

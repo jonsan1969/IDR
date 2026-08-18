@@ -2,6 +2,7 @@
 #include "IdrImageContext.h"
 #include "IdrLegacyBridge.h"
 #include "IdrLegacyCompat.h"
+#include "IdrLegacyProcedureAdapter.h"
 #include "IdrPeLoader.h"
 #include "../../Disasm.h"
 
@@ -9,6 +10,7 @@
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <vector>
 
 extern MDisasm Disasm;
 
@@ -159,6 +161,44 @@ int wmain(int argc, wchar_t **argv) {
         }
     }
 
+    std::size_t providerCalls = 0;
+    const idr::core::LegacyProcedurePrototypeProvider fallbackProvider =
+        [&](const idr::core::ProcedureSummary &, idr::core::ProcedurePrototypeMetadata &metadata) {
+            ++providerCalls;
+            metadata.kind = ikProc;
+            return true;
+        };
+    std::vector<idr::core::DWord> installedProcedures;
+    std::vector<idr::core::DWord> reusedProcedures;
+    if (!idr::core::ApplyDiscoveredProceduresToActiveLegacySession(
+            flow, ikFunc, fallbackProvider, &installedProcedures, &reusedProcedures)) {
+        std::cerr << "idr-cli: cannot reconcile discovered procedures with legacy metadata\n";
+        idr::core::ResetLegacyLoadedPeSession();
+        return 12;
+    }
+    if (installedProcedures.size() + reusedProcedures.size() != flow.procedures.size() ||
+        providerCalls != installedProcedures.size()) {
+        std::cerr << "idr-cli: reconciled procedure count does not match CFG procedures\n";
+        idr::core::ResetLegacyLoadedPeSession();
+        return 13;
+    }
+    const auto materializedSession = idr::core::GetLegacyImageSessionView();
+    for (const auto &procedure : flow.procedures) {
+        const int offset = idr::core::AddressToOffset(procedure.address);
+        if (offset < 0 || !materializedSession.infos) {
+            std::cerr << "idr-cli: materialized procedure address is not mapped\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 14;
+        }
+        PInfoRec record = static_cast<PInfoRec>(materializedSession.infos[static_cast<std::size_t>(offset)]);
+        idr::core::ProcedurePrototypeMetadata captured;
+        if (!record || !idr::core::CaptureLegacyProcedurePrototypeMetadata(*record, captured)) {
+            std::cerr << "idr-cli: materialized procedure lacks valid legacy metadata\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 15;
+        }
+    }
+
     std::cout << "IDR portable CLI\n";
     std::cout << "file=" << target.u8string() << '\n';
     PrintHex("image-base", image.imageBase);
@@ -243,6 +283,8 @@ int wmain(int argc, wchar_t **argv) {
     std::cout << "candidate-instruction-count=" << candidateInstructionCount << '\n';
     std::cout << "procedure-start-count=" << (flow.candidates.size() + 1) << '\n';
     std::cout << "procedure-summary-count=" << flow.procedures.size() << '\n';
+    std::cout << "legacy-procedure-installed-count=" << installedProcedures.size() << '\n';
+    std::cout << "legacy-procedure-reused-count=" << reusedProcedures.size() << '\n';
     std::cout << "entry-flags=0x"
               << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << entryFlags
               << std::dec << std::setfill(' ') << '\n';

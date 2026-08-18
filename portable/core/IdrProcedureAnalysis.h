@@ -2,6 +2,7 @@
 
 #include "IdrControlFlow.h"
 
+#include <string>
 #include <vector>
 
 namespace idr::core {
@@ -17,6 +18,44 @@ struct ProcedureAnalysisInput {
     std::vector<CallXref> incomingCalls;
     std::vector<CallXref> outgoingCalls;
 };
+
+// Minimal neutral prototype/stack metadata read by the legacy decompiler
+// before it can begin procedure decompilation. This is intentionally smaller
+// than InfoRec/InfoProcInfo and does not contain legacy procSize.
+struct ProcedureArgumentMetadata {
+    Byte tag = 0;
+    bool inRegister = false;
+    int index = 0;
+    int size = 0;
+    std::string name;
+    std::string type;
+};
+
+struct ProcedureLocalMetadata {
+    int offset = 0;
+    int size = 0;
+    std::string name;
+    std::string type;
+};
+
+struct ProcedurePrototypeMetadata {
+    Byte kind = 0;
+    std::string returnType;
+    DWord flags = 0;
+    Word bpBase = 0;
+    Word retBytes = 0;
+    int stackSize = 0;
+    std::vector<ProcedureArgumentMetadata> arguments;
+    std::vector<ProcedureLocalMetadata> locals;
+};
+
+inline bool IsProcedurePrototypeComplete(const ProcedurePrototypeMetadata &metadata, Byte functionKind) {
+    for (const auto &argument : metadata.arguments) {
+        if (argument.type.empty()) return false;
+    }
+    if (metadata.kind == functionKind && metadata.returnType.empty()) return false;
+    return true;
+}
 
 inline bool BuildProcedureAnalysisInput(const ControlFlowResult &result,
                                         DWord procedureAddress,

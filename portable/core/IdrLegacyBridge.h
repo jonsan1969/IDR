@@ -2,6 +2,7 @@
 
 #include "IdrAnalysisState.h"
 #include "IdrCoreServices.h"
+#include "IdrProcedureSizePolicy.h"
 
 #include <cstddef>
 
@@ -29,6 +30,8 @@ void SetLegacyAnalysisState(AnalysisState *state);
 AnalysisState &LegacyAnalysisState();
 void SetLegacyServices(Services *services);
 Services &LegacyServices();
+void SetLegacyProcedureSizeResolver(HeadlessProcedureSizeResolver resolver);
+const HeadlessProcedureSizeResolver &LegacyProcedureSizeResolver();
 
 // Bind one loaded PE image to both the neutral image context and the legacy
 // analysis-facing Main-style state. This keeps the two views authoritative

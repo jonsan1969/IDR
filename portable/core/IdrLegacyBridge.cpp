@@ -63,6 +63,7 @@ idr::core::AnalysisState loadedState;
 idr::core::AnalysisState *activeState = &fallbackState;
 idr::core::Services fallbackServices = idr::core::MakeHeadlessServices();
 idr::core::Services *activeServices = &fallbackServices;
+idr::core::HeadlessProcedureSizeResolver activeProcedureSizeResolver;
 std::vector<PInfoRec> loadedInfoSlots;
 std::map<String,DWord> classAddressCache;
 MethodRec portableMethodRecord{};
@@ -104,6 +105,8 @@ void SetLegacyAnalysisState(AnalysisState *state){activeState=state?state:&fallb
 AnalysisState &LegacyAnalysisState(){EnsureFallbackSize();return *activeState;}
 void SetLegacyServices(Services *services){activeServices=services?services:&fallbackServices;}
 Services &LegacyServices(){return *activeServices;}
+void SetLegacyProcedureSizeResolver(HeadlessProcedureSizeResolver resolver){activeProcedureSizeResolver=std::move(resolver);}
+const HeadlessProcedureSizeResolver &LegacyProcedureSizeResolver(){return activeProcedureSizeResolver;}
 
 void ActivateLegacyLoadedPeSession(LoadedPeImage &image){
     ReleaseLoadedInfos();
@@ -139,6 +142,7 @@ void ResetLegacyLoadedPeSession(){
     CodeBase=0;
     CodeSize=0;
     CurProcAdr=0;
+    activeProcedureSizeResolver={};
     classAddressCache.clear();
 }
 
@@ -170,14 +174,15 @@ int PortableEstimateProcSize(DWord address){
     const int offset=idr::core::AddressToOffset(address);
     if(offset<0) return 0;
     const auto pos=static_cast<std::size_t>(offset);
-    if(Infos && pos<static_cast<std::size_t>(TotalSize) && Infos[pos] && Infos[pos]->procInfo && Infos[pos]->procInfo->procSize>0)
-        return Infos[pos]->procInfo->procSize;
-    const auto &state=idr::core::LegacyAnalysisState();
-    if(pos>=state.Size()) return 0;
-    for(std::size_t i=pos+1;i<state.Size();++i)
-        if(state.IsFlagSet(cfProcStart,i)) return static_cast<int>(i-pos);
-    const auto imageSize=idr::core::GetImageView().size;
-    return imageSize>pos ? static_cast<int>(imageSize-pos) : 0;
+    int storedSize=0;
+    if(Infos && pos<static_cast<std::size_t>(TotalSize) && Infos[pos] && Infos[pos]->procInfo)
+        storedSize=Infos[pos]->procInfo->procSize;
+    idr::core::ProcedureSizeResolutionRequest request;
+    request.procedureAddress=address;
+    request.storedSize=storedSize;
+    idr::core::ResolvedProcedureSize resolved;
+    if(!idr::core::ResolveProcedureSize(request,idr::core::LegacyProcedureSizeResolver(),resolved)) return 0;
+    return resolved.size;
 }
 
 String __fastcall ManualInput(DWord procAdr,DWord curAdr,String caption,String labelText){

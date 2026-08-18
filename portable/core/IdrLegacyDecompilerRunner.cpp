@@ -31,7 +31,8 @@ bool PreflightActiveLegacyProcedure(
     sizeRequest.procedureAddress = address;
     sizeRequest.storedSize = record->procInfo->procSize;
     ResolvedProcedureSize resolvedSize;
-    if (!ResolveProcedureSize(sizeRequest, sizeResolver, resolvedSize)) return false;
+    const auto &effectiveResolver = sizeResolver ? sizeResolver : LegacyProcedureSizeResolver();
+    if (!ResolveProcedureSize(sizeRequest, effectiveResolver, resolvedSize)) return false;
 
     TDecompileEnv environment(address, resolvedSize.size, record);
     TDecompiler decompiler(&environment);

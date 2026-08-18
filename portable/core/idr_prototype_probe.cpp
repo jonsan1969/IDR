@@ -1,4 +1,5 @@
 #include "IdrProcedureAnalysis.h"
+#include "IdrHeadlessPrototypePolicy.h"
 
 #include <iostream>
 
@@ -74,8 +75,52 @@ int main() {
     LegacyProcedureMetadataSeed rejected;
     if (BuildLegacyProcedureMetadataSeed(incompleteFunction, kFunctionKind, rejected)) return 9;
 
+    PrototypeResolutionRequest request;
+    request.procedureAddress = 0x00402000u;
+    request.callSite = 0x00401005u;
+    request.current = incompleteFunction;
+
+    ProcedurePrototypeMetadata resolved;
+    if (ResolveProcedurePrototype(request, kFunctionKind, {}, resolved)) return 10;
+
+    HeadlessPrototypeResolver unavailable = [](const PrototypeResolutionRequest &) {
+        return PrototypeResolutionResult{PrototypeResolutionStatus::Unavailable, {}};
+    };
+    if (ResolveProcedurePrototype(request, kFunctionKind, unavailable, resolved)) return 11;
+
+    HeadlessPrototypeResolver incomplete = [=](const PrototypeResolutionRequest &) {
+        PrototypeResolutionResult result;
+        result.status = PrototypeResolutionStatus::Resolved;
+        result.prototype.kind = kFunctionKind;
+        return result;
+    };
+    if (ResolveProcedurePrototype(request, kFunctionKind, incomplete, resolved)) return 12;
+
+    HeadlessPrototypeResolver resolver = [=](const PrototypeResolutionRequest &seen) {
+        PrototypeResolutionResult result;
+        if (seen.procedureAddress != 0x00402000u || seen.callSite != 0x00401005u)
+            return result;
+        result.status = PrototypeResolutionStatus::Resolved;
+        result.prototype.kind = kFunctionKind;
+        result.prototype.returnType = "Integer";
+        return result;
+    };
+    if (!ResolveProcedurePrototype(request, kFunctionKind, resolver, resolved)) return 13;
+    if (resolved.kind != kFunctionKind || resolved.returnType != "Integer") return 14;
+
+    bool resolverCalled = false;
+    PrototypeResolutionRequest completeRequest;
+    completeRequest.current = procedure;
+    HeadlessPrototypeResolver mustNotRun = [&](const PrototypeResolutionRequest &) {
+        resolverCalled = true;
+        return PrototypeResolutionResult{};
+    };
+    if (!ResolveProcedurePrototype(completeRequest, kFunctionKind, mustNotRun, resolved)) return 15;
+    if (resolverCalled || resolved.kind != kProcedureKind) return 16;
+
     std::cout << "procedure-prototype-metadata=ok\n";
     std::cout << "legacy-procedure-metadata-seed=ok\n";
+    std::cout << "headless-prototype-policy=ok\n";
     std::cout << "seed-argument-count=" << seed.arguments.size() << '\n';
     std::cout << "seed-local-count=" << seed.locals.size() << '\n';
     return 0;

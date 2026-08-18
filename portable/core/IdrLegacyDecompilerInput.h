@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IdrLegacyProcedureAdapter.h"
+#include "IdrHeadlessPrototypePolicy.h"
 
 #include <vector>
 
@@ -40,23 +41,30 @@ inline bool CaptureActiveLegacyProcedurePrototype(DWord address,
 }
 
 // Build one decompiler-facing read model from portable CFG observations and
-// the already-reconciled active legacy metadata. Prototype completeness is
-// enforced for the current procedure and every unique direct callee. Missing
-// or incomplete metadata is a hard failure here; a future headless resolver
-// can decide how to supply such metadata without falling back to GUI input.
+// the already-reconciled active legacy metadata. Complete prototypes pass
+// through untouched. Incomplete prototypes may be supplied by an explicit
+// headless resolver; unavailable/rejected/incomplete resolver results fail
+// cleanly without mutating legacy InfoRec state or falling back to GUI input.
 inline bool BuildProcedureDecompileInputFromActiveLegacySession(
     const ControlFlowResult &flow,
     DWord procedureAddress,
     Byte functionKind,
-    ProcedureDecompileInput &input) {
+    ProcedureDecompileInput &input,
+    const HeadlessPrototypeResolver &resolver = {}) {
     input = {};
 
     if (!BuildProcedureAnalysisInput(flow, procedureAddress, input.analysis)) return false;
-    if (!CaptureActiveLegacyProcedurePrototype(procedureAddress, input.prototype)) {
+
+    ProcedurePrototypeMetadata currentPrototype;
+    if (!CaptureActiveLegacyProcedurePrototype(procedureAddress, currentPrototype)) {
         input = {};
         return false;
     }
-    if (!IsProcedurePrototypeComplete(input.prototype, functionKind)) {
+    PrototypeResolutionRequest currentRequest;
+    currentRequest.procedureAddress = procedureAddress;
+    currentRequest.callSite = 0;
+    currentRequest.current = std::move(currentPrototype);
+    if (!ResolveProcedurePrototype(currentRequest, functionKind, resolver, input.prototype)) {
         input = {};
         return false;
     }
@@ -72,12 +80,22 @@ inline bool BuildProcedureDecompileInputFromActiveLegacySession(
         if (alreadyCaptured) continue;
 
         ProcedurePrototypeMetadata prototype;
-        if (!CaptureActiveLegacyProcedurePrototype(call.callee, prototype) ||
-            !IsProcedurePrototypeComplete(prototype, functionKind)) {
+        if (!CaptureActiveLegacyProcedurePrototype(call.callee, prototype)) {
             input = {};
             return false;
         }
-        input.callees.push_back({call.callee, std::move(prototype)});
+
+        PrototypeResolutionRequest calleeRequest;
+        calleeRequest.procedureAddress = call.callee;
+        calleeRequest.callSite = call.callSite;
+        calleeRequest.current = std::move(prototype);
+
+        ProcedurePrototypeMetadata resolvedPrototype;
+        if (!ResolveProcedurePrototype(calleeRequest, functionKind, resolver, resolvedPrototype)) {
+            input = {};
+            return false;
+        }
+        input.callees.push_back({call.callee, std::move(resolvedPrototype)});
     }
 
     return true;

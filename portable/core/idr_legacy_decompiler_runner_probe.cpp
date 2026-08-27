@@ -225,6 +225,89 @@ int main() {
     if (callerRecord->procInfo->procSize != 6 || calleeRecord->procInfo->procSize != 6) return 47;
 
     idr::core::ResetLegacyLoadedPeSession();
+
+    constexpr idr::core::DWord kArgumentCalleeAddress = kAddress + 0x20u;
+    idr::core::LoadedPeImage argumentImage;
+    argumentImage.bytes.assign(0x30, 0x90);
+    argumentImage.bytes[0] = 0xB8;
+    argumentImage.bytes[1] = 0x07;
+    argumentImage.bytes[2] = 0x00;
+    argumentImage.bytes[3] = 0x00;
+    argumentImage.bytes[4] = 0x00;
+    argumentImage.bytes[5] = 0xE8;
+    argumentImage.bytes[6] = 0x16;
+    argumentImage.bytes[7] = 0x00;
+    argumentImage.bytes[8] = 0x00;
+    argumentImage.bytes[9] = 0x00;
+    argumentImage.bytes[10] = 0xC3;
+    argumentImage.bytes[0x20] = 0xC3;
+    argumentImage.segments.push_back({kAddress, argumentImage.bytes.size(), 0});
+    argumentImage.imageBase = 0x00400000u;
+    argumentImage.imageSize = 0x4000u;
+    argumentImage.entryPoint = kAddress;
+    argumentImage.codeBase = kAddress;
+    argumentImage.codeSize = static_cast<idr::core::DWord>(argumentImage.bytes.size());
+    std::cout << "argument-call-stage=activate\n" << std::flush;
+    idr::core::ActivateLegacyLoadedPeSession(argumentImage);
+
+    if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(kAddress, seed)) return 49;
+    idr::core::ProcedurePrototypeMetadata argumentCalleePrototype;
+    argumentCalleePrototype.kind = ikFunc;
+    argumentCalleePrototype.returnType = "Integer";
+    argumentCalleePrototype.arguments.push_back({0x21, true, 0, 4, "Value", "Integer"});
+    idr::core::LegacyProcedureMetadataSeed argumentCalleeSeed;
+    if (!idr::core::BuildLegacyProcedureMetadataSeed(argumentCalleePrototype, ikFunc, argumentCalleeSeed)) return 50;
+    if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(
+            kArgumentCalleeAddress, argumentCalleeSeed))
+        return 51;
+
+    const auto argumentSession = idr::core::GetLegacyImageSessionView();
+    if (!argumentSession.infos || !argumentSession.infos[0] || !argumentSession.infos[0x20]) return 52;
+    PInfoRec argumentCallerRecord = static_cast<PInfoRec>(argumentSession.infos[0]);
+    PInfoRec argumentCalleeRecord = static_cast<PInfoRec>(argumentSession.infos[0x20]);
+    if (!argumentCallerRecord || !argumentCallerRecord->procInfo ||
+        !argumentCalleeRecord || !argumentCalleeRecord->procInfo)
+        return 53;
+    argumentCallerRecord->procInfo->procSize = 11;
+    argumentCalleeRecord->procInfo->procSize = 1;
+    idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 0);
+    idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 0x20);
+
+    idr::core::ProcedurePrototypeMetadata capturedArgumentPrototype;
+    if (!idr::core::CaptureLegacyProcedurePrototypeMetadata(
+            *argumentCalleeRecord, capturedArgumentPrototype))
+        return 54;
+    if (capturedArgumentPrototype.kind != ikFunc ||
+        capturedArgumentPrototype.returnType != "Integer" ||
+        capturedArgumentPrototype.arguments.size() != 1 ||
+        capturedArgumentPrototype.arguments[0].tag != 0x21 ||
+        !capturedArgumentPrototype.arguments[0].inRegister ||
+        capturedArgumentPrototype.arguments[0].index != 0 ||
+        capturedArgumentPrototype.arguments[0].size != 4 ||
+        capturedArgumentPrototype.arguments[0].name != "Value" ||
+        capturedArgumentPrototype.arguments[0].type != "Integer")
+        return 55;
+    std::cout << "argument-call-stage=records-ready\n" << std::flush;
+
+    manualInputCalls = 0;
+    idr::core::SetLegacyServices(&services);
+    idr::core::ProcedureSourceResult argumentRun;
+    std::cout << "argument-call-stage=decompile-enter\n" << std::flush;
+    if (!idr::core::DecompileActiveLegacyProcedureSource(kAddress, argumentRun)) return 56;
+    std::cout << "argument-call-stage=decompile-returned\n" << std::flush;
+    if (!argumentRun.completed || argumentRun.procedureAddress != kAddress ||
+        argumentRun.procedureSize != 11 ||
+        argumentRun.procedureSizeSource != idr::core::ProcedureSizeSource::LegacyMetadata)
+        return 57;
+    if (manualInputCalls != 0) return 58;
+    if (argumentRun.body.size() < 3 || argumentRun.body.front() != "begin" ||
+        argumentRun.body.back() != "end")
+        return 59;
+    if (argumentCallerRecord->procInfo->procSize != 11 ||
+        argumentCalleeRecord->procInfo->procSize != 1)
+        return 60;
+
+    idr::core::ResetLegacyLoadedPeSession();
     std::cout << "legacy-decompiler-runner-preflight=ok\n";
     std::cout << "headless-procedure-size-policy=ok\n";
     std::cout << "legacy-procedure-size-bridge=ok\n";
@@ -233,5 +316,6 @@ int main() {
     std::cout << "legacy-decompiler-stack-frame=ok\n";
     std::cout << "neutral-procedure-source=ok\n";
     std::cout << "legacy-decompiler-direct-call=ok\n";
+    std::cout << "legacy-decompiler-register-argument-call=ok\n";
     return 0;
 }

@@ -10,6 +10,7 @@
 extern MDisasm Disasm;
 
 int PortableEstimateProcSize(DWord address);
+Byte __fastcall GetTypeKind(String AName, int *size);
 
 int main() {
     constexpr idr::core::DWord kAddress = 0x00403000u;
@@ -185,7 +186,8 @@ int main() {
 
     if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(kAddress, seed)) return 38;
     idr::core::ProcedurePrototypeMetadata calleePrototype;
-    calleePrototype.kind = ikProc;
+    calleePrototype.kind = ikFunc;
+    calleePrototype.returnType = "Integer";
     idr::core::LegacyProcedureMetadataSeed calleeSeed;
     if (!idr::core::BuildLegacyProcedureMetadataSeed(calleePrototype, ikFunc, calleeSeed)) return 39;
     if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(kCalleeAddress, calleeSeed)) return 40;
@@ -201,6 +203,12 @@ int main() {
     idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 0);
     idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 0x10);
     std::cout << "direct-call-stage=records-ready\n" << std::flush;
+
+    int integerTypeSize = 0;
+    const Byte integerTypeKind = GetTypeKind("Integer", &integerTypeSize);
+    std::cout << "direct-call-stage=integer-type kind=" << static_cast<int>(integerTypeKind)
+              << " size=" << integerTypeSize << "\n" << std::flush;
+    if (integerTypeKind != ikInteger) return 48;
 
     manualInputCalls = 0;
     idr::core::SetLegacyServices(&services);

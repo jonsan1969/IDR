@@ -118,10 +118,44 @@ int main() {
 
     idr::core::ResetLegacyLoadedPeSession();
     if (idr::core::LegacyProcedureSizeResolver()) return 23;
+
+    // Advance one step beyond RET-only: exercise a canonical stack-frame
+    // prologue/epilogue through the same real decoder/decompiler path.
+    idr::core::LoadedPeImage frameImage;
+    frameImage.bytes = {0x55, 0x8B, 0xEC, 0x5D, 0xC3}; // push ebp; mov ebp,esp; pop ebp; ret
+    frameImage.segments.push_back({kAddress, frameImage.bytes.size(), 0});
+    frameImage.imageBase = 0x00400000u;
+    frameImage.imageSize = 0x4000u;
+    frameImage.entryPoint = kAddress;
+    frameImage.codeBase = kAddress;
+    frameImage.codeSize = static_cast<idr::core::DWord>(frameImage.bytes.size());
+    idr::core::ActivateLegacyLoadedPeSession(frameImage);
+    if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(kAddress, seed)) return 24;
+
+    const auto frameSession = idr::core::GetLegacyImageSessionView();
+    if (!frameSession.infos || !frameSession.infos[0]) return 25;
+    PInfoRec frameRecord = static_cast<PInfoRec>(frameSession.infos[0]);
+    if (!frameRecord || !frameRecord->procInfo) return 26;
+    frameRecord->procInfo->procSize = 5;
+    idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 0);
+
+    manualInputCalls = 0;
+    idr::core::SetLegacyServices(&services);
+    idr::core::ProcedureDecompileResult frameRun;
+    if (!idr::core::DecompileActiveLegacyProcedure(kAddress, frameRun)) return 27;
+    if (!frameRun.completed || !frameRun.wasRet || frameRun.procedureAddress != kAddress ||
+        frameRun.procedureSize != 5 ||
+        frameRun.procedureSizeSource != idr::core::ProcedureSizeSource::LegacyMetadata)
+        return 28;
+    if (manualInputCalls != 0) return 29;
+    if (frameRecord->procInfo->procSize != 5) return 30;
+
+    idr::core::ResetLegacyLoadedPeSession();
     std::cout << "legacy-decompiler-runner-preflight=ok\n";
     std::cout << "headless-procedure-size-policy=ok\n";
     std::cout << "legacy-procedure-size-bridge=ok\n";
     std::cout << "legacy-decompiler-decompile=ok\n";
     std::cout << "neutral-decompiler-result=ok\n";
+    std::cout << "legacy-decompiler-stack-frame=ok\n";
     return 0;
 }

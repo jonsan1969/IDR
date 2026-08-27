@@ -26,4 +26,9 @@ bool DecompileActiveLegacyProcedure(
     ProcedureDecompileResult &result,
     const HeadlessProcedureSizeResolver &sizeResolver = {});
 
+bool DecompileActiveLegacyProcedureSource(
+    DWord address,
+    ProcedureSourceResult &result,
+    const HeadlessProcedureSizeResolver &sizeResolver = {});
+
 } // namespace idr::core

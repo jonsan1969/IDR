@@ -4,6 +4,7 @@
 #include "IdrPeLoader.h"
 #include "../../Disasm.h"
 
+#include <algorithm>
 #include <iostream>
 
 extern MDisasm Disasm;
@@ -35,8 +36,6 @@ int main() {
     PInfoRec record = static_cast<PInfoRec>(session.infos[0]);
     if (!record || !record->procInfo || record->procInfo->procSize != 0) return 4;
 
-    // A later ProcStart used to make PortableEstimateProcSize invent a span.
-    // With no explicit size policy, that transitional heuristic must stay gone.
     idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 2);
     if (PortableEstimateProcSize(kAddress) != 0) return 5;
 
@@ -90,12 +89,8 @@ int main() {
         preflight.procedureSizeSource != idr::core::ProcedureSizeSource::None)
         return 17;
 
-    // First controlled execution of the real legacy decompiler loop.
-    // Unlike preflight, Decompile() immediately uses the real MDisasm backend.
-    // Initialize the shipped x86 dis.dll path explicitly before entering it.
     if (!Disasm.Init()) return 18;
 
-    // The one-byte fixture is RET only, so no interactive path should be reached.
     record->procInfo->procSize = 1;
     std::size_t manualInputCalls = 0;
     auto services = idr::core::MakeHeadlessServices();
@@ -119,10 +114,8 @@ int main() {
     idr::core::ResetLegacyLoadedPeSession();
     if (idr::core::LegacyProcedureSizeResolver()) return 23;
 
-    // Advance one step beyond RET-only: exercise a canonical stack-frame
-    // prologue/epilogue through the same real decoder/decompiler path.
     idr::core::LoadedPeImage frameImage;
-    frameImage.bytes = {0x55, 0x8B, 0xEC, 0x5D, 0xC3}; // push ebp; mov ebp,esp; pop ebp; ret
+    frameImage.bytes = {0x55, 0x8B, 0xEC, 0x5D, 0xC3};
     frameImage.segments.push_back({kAddress, frameImage.bytes.size(), 0});
     frameImage.imageBase = 0x00400000u;
     frameImage.imageSize = 0x4000u;
@@ -150,6 +143,21 @@ int main() {
     if (manualInputCalls != 0) return 29;
     if (frameRecord->procInfo->procSize != 5) return 30;
 
+    // Exercise the legacy procedure-level source wrapper and capture only its
+    // neutral portable body. The wrapper owns its TDecompiler internally.
+    manualInputCalls = 0;
+    idr::core::ProcedureSourceResult sourceRun;
+    if (!idr::core::DecompileActiveLegacyProcedureSource(kAddress, sourceRun)) return 31;
+    if (!sourceRun.completed || sourceRun.procedureAddress != kAddress ||
+        sourceRun.procedureSize != 5 ||
+        sourceRun.procedureSizeSource != idr::core::ProcedureSizeSource::LegacyMetadata)
+        return 32;
+    if (manualInputCalls != 0) return 33;
+    if (sourceRun.body.size() < 3) return 34;
+    if (std::find(sourceRun.body.begin(), sourceRun.body.end(), "begin") == sourceRun.body.end()) return 35;
+    if (std::find(sourceRun.body.begin(), sourceRun.body.end(), "end") == sourceRun.body.end()) return 36;
+    if (frameRecord->procInfo->procSize != 5) return 37;
+
     idr::core::ResetLegacyLoadedPeSession();
     std::cout << "legacy-decompiler-runner-preflight=ok\n";
     std::cout << "headless-procedure-size-policy=ok\n";
@@ -157,5 +165,6 @@ int main() {
     std::cout << "legacy-decompiler-decompile=ok\n";
     std::cout << "neutral-decompiler-result=ok\n";
     std::cout << "legacy-decompiler-stack-frame=ok\n";
+    std::cout << "neutral-procedure-source=ok\n";
     return 0;
 }

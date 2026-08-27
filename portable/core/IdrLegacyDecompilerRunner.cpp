@@ -37,6 +37,14 @@ bool ResolveActiveLegacyProcedure(
     return ResolveProcedureSize(sizeRequest, effectiveResolver, resolvedSize);
 }
 
+void CaptureBody(TDecompileEnv &environment, std::vector<std::string> &body) {
+    body.clear();
+    if (!environment.Body) return;
+    body.reserve(static_cast<std::size_t>(environment.Body->Count));
+    for (int index = 0; index < environment.Body->Count; ++index)
+        body.push_back(environment.Body->Strings[index]);
+}
+
 } // namespace
 
 bool PreflightActiveLegacyProcedure(
@@ -86,11 +94,28 @@ bool DecompileActiveLegacyProcedure(
     result.endAddress = endAddress;
     result.wasRet = decompiler.WasRet;
     result.completed = true;
-    if (environment.Body) {
-        result.body.reserve(static_cast<std::size_t>(environment.Body->Count));
-        for (int index = 0; index < environment.Body->Count; ++index)
-            result.body.push_back(environment.Body->Strings[index]);
-    }
+    CaptureBody(environment, result.body);
+    return true;
+}
+
+bool DecompileActiveLegacyProcedureSource(
+    DWord address,
+    ProcedureSourceResult &result,
+    const HeadlessProcedureSizeResolver &sizeResolver) {
+    result = {};
+
+    PInfoRec record = nullptr;
+    ResolvedProcedureSize resolvedSize;
+    if (!ResolveActiveLegacyProcedure(address, sizeResolver, record, resolvedSize)) return false;
+
+    TDecompileEnv environment(address, resolvedSize.size, record);
+    environment.DecompileProc();
+
+    result.procedureAddress = address;
+    result.procedureSize = environment.Size;
+    result.procedureSizeSource = resolvedSize.source;
+    result.completed = true;
+    CaptureBody(environment, result.body);
     return true;
 }
 

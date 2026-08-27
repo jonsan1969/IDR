@@ -1,7 +1,6 @@
 #pragma once
 
-#include "IdrCoreTypes.h"
-#include "IdrProcedureSizePolicy.h"
+#include "IdrDecompilerResult.h"
 
 namespace idr::core {
 
@@ -13,13 +12,9 @@ struct LegacyDecompilerPreflightResult {
     bool initialized = false;
 };
 
-struct LegacyDecompilerRunResult {
-    int procedureSize = 0;
-    ProcedureSizeSource procedureSizeSource = ProcedureSizeSource::None;
-    DWord endAddress = 0;
-    bool wasRet = false;
-    bool decompiled = false;
-};
+// Compatibility name for the legacy adapter entry point. The payload itself
+// is the neutral portable result boundary.
+using LegacyDecompilerRunResult = ProcedureDecompileResult;
 
 bool PreflightActiveLegacyProcedure(
     DWord address,
@@ -28,7 +23,7 @@ bool PreflightActiveLegacyProcedure(
 
 bool DecompileActiveLegacyProcedure(
     DWord address,
-    LegacyDecompilerRunResult &result,
+    ProcedureDecompileResult &result,
     const HeadlessProcedureSizeResolver &sizeResolver = {});
 
 } // namespace idr::core

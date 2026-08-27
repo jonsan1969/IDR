@@ -64,7 +64,7 @@ bool PreflightActiveLegacyProcedure(
 
 bool DecompileActiveLegacyProcedure(
     DWord address,
-    LegacyDecompilerRunResult &result,
+    ProcedureDecompileResult &result,
     const HeadlessProcedureSizeResolver &sizeResolver) {
     result = {};
 
@@ -80,11 +80,17 @@ bool DecompileActiveLegacyProcedure(
 
     const DWord endAddress = decompiler.Decompile(address, 0, nullptr);
 
+    result.procedureAddress = address;
     result.procedureSize = environment.Size;
     result.procedureSizeSource = resolvedSize.source;
     result.endAddress = endAddress;
     result.wasRet = decompiler.WasRet;
-    result.decompiled = true;
+    result.completed = true;
+    if (environment.Body) {
+        result.body.reserve(static_cast<std::size_t>(environment.Body->Count));
+        for (int index = 0; index < environment.Body->Count; ++index)
+            result.body.push_back(environment.Body->Strings[index]);
+    }
     return true;
 }
 

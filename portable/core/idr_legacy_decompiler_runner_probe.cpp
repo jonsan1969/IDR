@@ -107,9 +107,10 @@ int main() {
     };
     idr::core::SetLegacyServices(&services);
 
-    idr::core::LegacyDecompilerRunResult run;
+    idr::core::ProcedureDecompileResult run;
     if (!idr::core::DecompileActiveLegacyProcedure(kAddress, run)) return 19;
-    if (!run.decompiled || !run.wasRet || run.procedureSize != 1 ||
+    if (!run.completed || !run.wasRet || run.procedureAddress != kAddress ||
+        run.procedureSize != 1 ||
         run.procedureSizeSource != idr::core::ProcedureSizeSource::LegacyMetadata)
         return 20;
     if (manualInputCalls != 0) return 21;
@@ -121,5 +122,6 @@ int main() {
     std::cout << "headless-procedure-size-policy=ok\n";
     std::cout << "legacy-procedure-size-bridge=ok\n";
     std::cout << "legacy-decompiler-decompile=ok\n";
+    std::cout << "neutral-decompiler-result=ok\n";
     return 0;
 }

@@ -143,8 +143,8 @@ int main() {
     if (manualInputCalls != 0) return 29;
     if (frameRecord->procInfo->procSize != 5) return 30;
 
-    // Exercise the legacy procedure-level source wrapper and capture only its
-    // neutral portable body. The wrapper owns its TDecompiler internally.
+    // Build a portable source envelope around the already proven low-level
+    // legacy decompile result. Do not depend on the GUI-owned DecompileProc().
     manualInputCalls = 0;
     idr::core::ProcedureSourceResult sourceRun;
     if (!idr::core::DecompileActiveLegacyProcedureSource(kAddress, sourceRun)) return 31;
@@ -153,9 +153,9 @@ int main() {
         sourceRun.procedureSizeSource != idr::core::ProcedureSizeSource::LegacyMetadata)
         return 32;
     if (manualInputCalls != 0) return 33;
-    if (sourceRun.body.size() < 3) return 34;
-    if (std::find(sourceRun.body.begin(), sourceRun.body.end(), "begin") == sourceRun.body.end()) return 35;
-    if (std::find(sourceRun.body.begin(), sourceRun.body.end(), "end") == sourceRun.body.end()) return 36;
+    if (sourceRun.body.size() < 2) return 34;
+    if (sourceRun.body.front() != "begin") return 35;
+    if (sourceRun.body.back() != "end") return 36;
     if (frameRecord->procInfo->procSize != 5) return 37;
 
     idr::core::ResetLegacyLoadedPeSession();

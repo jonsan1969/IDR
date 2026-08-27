@@ -21,9 +21,9 @@ struct ProcedureDecompileResult {
     std::vector<std::string> body;
 };
 
-// Neutral result for the legacy procedure-level source wrapper. This is kept
-// separate because TDecompileEnv::DecompileProc() owns the internal
-// TDecompiler instance and does not expose its low-level end/WasRet state.
+// Neutral procedure-source envelope built by the portable adapter on top of
+// the low-level legacy execution result. It deliberately avoids the legacy
+// TDecompileEnv::DecompileProc() presentation/orchestration path.
 struct ProcedureSourceResult {
     DWord procedureAddress = 0;
     int procedureSize = 0;

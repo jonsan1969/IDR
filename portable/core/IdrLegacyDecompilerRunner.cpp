@@ -104,18 +104,17 @@ bool DecompileActiveLegacyProcedureSource(
     const HeadlessProcedureSizeResolver &sizeResolver) {
     result = {};
 
-    PInfoRec record = nullptr;
-    ResolvedProcedureSize resolvedSize;
-    if (!ResolveActiveLegacyProcedure(address, sizeResolver, record, resolvedSize)) return false;
+    ProcedureDecompileResult lowLevel;
+    if (!DecompileActiveLegacyProcedure(address, lowLevel, sizeResolver)) return false;
 
-    TDecompileEnv environment(address, resolvedSize.size, record);
-    environment.DecompileProc();
-
-    result.procedureAddress = address;
-    result.procedureSize = environment.Size;
-    result.procedureSizeSource = resolvedSize.source;
-    result.completed = true;
-    CaptureBody(environment, result.body);
+    result.procedureAddress = lowLevel.procedureAddress;
+    result.procedureSize = lowLevel.procedureSize;
+    result.procedureSizeSource = lowLevel.procedureSizeSource;
+    result.completed = lowLevel.completed;
+    result.body.reserve(lowLevel.body.size() + 2);
+    result.body.push_back("begin");
+    result.body.insert(result.body.end(), lowLevel.body.begin(), lowLevel.body.end());
+    result.body.push_back("end");
     return true;
 }
 

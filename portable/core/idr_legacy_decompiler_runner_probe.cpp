@@ -308,6 +308,105 @@ int main() {
         return 60;
 
     idr::core::ResetLegacyLoadedPeSession();
+
+    constexpr idr::core::DWord kTwoArgumentCalleeAddress = kAddress + 0x20u;
+    idr::core::LoadedPeImage twoArgumentImage;
+    twoArgumentImage.bytes.assign(0x30, 0x90);
+    twoArgumentImage.bytes[0] = 0xB8;
+    twoArgumentImage.bytes[1] = 0x07;
+    twoArgumentImage.bytes[2] = 0x00;
+    twoArgumentImage.bytes[3] = 0x00;
+    twoArgumentImage.bytes[4] = 0x00;
+    twoArgumentImage.bytes[5] = 0xB9;
+    twoArgumentImage.bytes[6] = 0x09;
+    twoArgumentImage.bytes[7] = 0x00;
+    twoArgumentImage.bytes[8] = 0x00;
+    twoArgumentImage.bytes[9] = 0x00;
+    twoArgumentImage.bytes[10] = 0xE8;
+    twoArgumentImage.bytes[11] = 0x11;
+    twoArgumentImage.bytes[12] = 0x00;
+    twoArgumentImage.bytes[13] = 0x00;
+    twoArgumentImage.bytes[14] = 0x00;
+    twoArgumentImage.bytes[15] = 0xC3;
+    twoArgumentImage.bytes[0x20] = 0xC3;
+    twoArgumentImage.segments.push_back({kAddress, twoArgumentImage.bytes.size(), 0});
+    twoArgumentImage.imageBase = 0x00400000u;
+    twoArgumentImage.imageSize = 0x4000u;
+    twoArgumentImage.entryPoint = kAddress;
+    twoArgumentImage.codeBase = kAddress;
+    twoArgumentImage.codeSize = static_cast<idr::core::DWord>(twoArgumentImage.bytes.size());
+    std::cout << "two-argument-call-stage=activate\n" << std::flush;
+    idr::core::ActivateLegacyLoadedPeSession(twoArgumentImage);
+
+    if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(kAddress, seed)) return 61;
+    idr::core::ProcedurePrototypeMetadata twoArgumentCalleePrototype;
+    twoArgumentCalleePrototype.kind = ikFunc;
+    twoArgumentCalleePrototype.returnType = "Integer";
+    twoArgumentCalleePrototype.arguments.push_back({0x21, true, 0, 4, "Left", "Integer"});
+    twoArgumentCalleePrototype.arguments.push_back({0x21, true, 1, 4, "Right", "Integer"});
+    idr::core::LegacyProcedureMetadataSeed twoArgumentCalleeSeed;
+    if (!idr::core::BuildLegacyProcedureMetadataSeed(
+            twoArgumentCalleePrototype, ikFunc, twoArgumentCalleeSeed))
+        return 62;
+    if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(
+            kTwoArgumentCalleeAddress, twoArgumentCalleeSeed))
+        return 63;
+
+    const auto twoArgumentSession = idr::core::GetLegacyImageSessionView();
+    if (!twoArgumentSession.infos || !twoArgumentSession.infos[0] ||
+        !twoArgumentSession.infos[0x20])
+        return 64;
+    PInfoRec twoArgumentCallerRecord = static_cast<PInfoRec>(twoArgumentSession.infos[0]);
+    PInfoRec twoArgumentCalleeRecord = static_cast<PInfoRec>(twoArgumentSession.infos[0x20]);
+    if (!twoArgumentCallerRecord || !twoArgumentCallerRecord->procInfo ||
+        !twoArgumentCalleeRecord || !twoArgumentCalleeRecord->procInfo)
+        return 65;
+    twoArgumentCallerRecord->procInfo->procSize = 16;
+    twoArgumentCalleeRecord->procInfo->procSize = 1;
+    idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 0);
+    idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 0x20);
+
+    idr::core::ProcedurePrototypeMetadata capturedTwoArgumentPrototype;
+    if (!idr::core::CaptureLegacyProcedurePrototypeMetadata(
+            *twoArgumentCalleeRecord, capturedTwoArgumentPrototype))
+        return 66;
+    if (capturedTwoArgumentPrototype.kind != ikFunc ||
+        capturedTwoArgumentPrototype.returnType != "Integer" ||
+        capturedTwoArgumentPrototype.arguments.size() != 2 ||
+        capturedTwoArgumentPrototype.arguments[0].tag != 0x21 ||
+        !capturedTwoArgumentPrototype.arguments[0].inRegister ||
+        capturedTwoArgumentPrototype.arguments[0].index != 0 ||
+        capturedTwoArgumentPrototype.arguments[0].size != 4 ||
+        capturedTwoArgumentPrototype.arguments[0].name != "Left" ||
+        capturedTwoArgumentPrototype.arguments[0].type != "Integer" ||
+        capturedTwoArgumentPrototype.arguments[1].tag != 0x21 ||
+        !capturedTwoArgumentPrototype.arguments[1].inRegister ||
+        capturedTwoArgumentPrototype.arguments[1].index != 1 ||
+        capturedTwoArgumentPrototype.arguments[1].size != 4 ||
+        capturedTwoArgumentPrototype.arguments[1].name != "Right" ||
+        capturedTwoArgumentPrototype.arguments[1].type != "Integer")
+        return 67;
+    std::cout << "two-argument-call-stage=records-ready\n" << std::flush;
+
+    manualInputCalls = 0;
+    idr::core::SetLegacyServices(&services);
+    idr::core::ProcedureSourceResult twoArgumentRun;
+    std::cout << "two-argument-call-stage=decompile-enter\n" << std::flush;
+    if (!idr::core::DecompileActiveLegacyProcedureSource(kAddress, twoArgumentRun)) return 68;
+    std::cout << "two-argument-call-stage=decompile-returned\n" << std::flush;
+    if (!twoArgumentRun.completed || twoArgumentRun.procedureAddress != kAddress ||
+        twoArgumentRun.procedureSize != 16 ||
+        twoArgumentRun.procedureSizeSource != idr::core::ProcedureSizeSource::LegacyMetadata)
+        return 69;
+    if (manualInputCalls != 0) return 70;
+    if (twoArgumentRun.body.size() < 3 || twoArgumentRun.body.front() != "begin" ||
+        twoArgumentRun.body.back() != "end")
+        return 71;
+    if (twoArgumentCallerRecord->procInfo->procSize != 16 ||
+        twoArgumentCalleeRecord->procInfo->procSize != 1)
+        return 72;
+
+    idr::core::ResetLegacyLoadedPeSession();
     std::cout << "legacy-decompiler-runner-preflight=ok\n";
     std::cout << "headless-procedure-size-policy=ok\n";
     std::cout << "legacy-procedure-size-bridge=ok\n";
@@ -317,5 +416,6 @@ int main() {
     std::cout << "neutral-procedure-source=ok\n";
     std::cout << "legacy-decompiler-direct-call=ok\n";
     std::cout << "legacy-decompiler-register-argument-call=ok\n";
+    std::cout << "legacy-decompiler-two-register-argument-call=ok\n";
     return 0;
 }

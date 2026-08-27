@@ -2,8 +2,11 @@
 #include "IdrLegacyDecompilerRunner.h"
 #include "IdrLegacyProcedureAdapter.h"
 #include "IdrPeLoader.h"
+#include "../../Disasm.h"
 
 #include <iostream>
+
+extern MDisasm Disasm;
 
 int PortableEstimateProcSize(DWord address);
 
@@ -88,6 +91,10 @@ int main() {
         return 17;
 
     // First controlled execution of the real legacy decompiler loop.
+    // Unlike preflight, Decompile() immediately uses the real MDisasm backend.
+    // Initialize the shipped x86 dis.dll path explicitly before entering it.
+    if (!Disasm.Init()) return 18;
+
     // The one-byte fixture is RET only, so no interactive path should be reached.
     record->procInfo->procSize = 1;
     std::size_t manualInputCalls = 0;
@@ -101,15 +108,15 @@ int main() {
     idr::core::SetLegacyServices(&services);
 
     idr::core::LegacyDecompilerRunResult run;
-    if (!idr::core::DecompileActiveLegacyProcedure(kAddress, run)) return 18;
+    if (!idr::core::DecompileActiveLegacyProcedure(kAddress, run)) return 19;
     if (!run.decompiled || !run.wasRet || run.procedureSize != 1 ||
         run.procedureSizeSource != idr::core::ProcedureSizeSource::LegacyMetadata)
-        return 19;
-    if (manualInputCalls != 0) return 20;
-    if (record->procInfo->procSize != 1) return 21;
+        return 20;
+    if (manualInputCalls != 0) return 21;
+    if (record->procInfo->procSize != 1) return 22;
 
     idr::core::ResetLegacyLoadedPeSession();
-    if (idr::core::LegacyProcedureSizeResolver()) return 22;
+    if (idr::core::LegacyProcedureSizeResolver()) return 23;
     std::cout << "legacy-decompiler-runner-preflight=ok\n";
     std::cout << "headless-procedure-size-policy=ok\n";
     std::cout << "legacy-procedure-size-bridge=ok\n";

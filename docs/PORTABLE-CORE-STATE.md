@@ -6,193 +6,112 @@ Last updated: 2026-08-27
 
 Build a useful headless IDR core/CLI on stock GitHub-hosted Windows runners with MSVC x86, without requiring Embarcadero C++Builder, while preserving the original VCL GUI path.
 
-Repository: `jonsan1969/IDR` (fork of `sarog/IDR`).
+Repository: `jonsan1969/IDR`.
+Active branch: `agent/portable-cli`.
+Frozen / do not modify: `main`, `agent/portable-core-integration`, `agent/portable-core-smoke`.
 
-## Branches
-
-Active product branch: `agent/portable-cli`
-
-Frozen / do not modify:
-
-- `main`
-- `agent/portable-core-integration`
-- `agent/portable-core-smoke`
-
-The repository is the source of truth. Always verify branch HEAD directly from GitHub before writes.
+The repository is authoritative. Verify branch HEAD directly from GitHub before every write.
 
 ## Current verified status
 
 Current code HEAD before this docs-only update:
 
-`c49c327e58057a8cfd061ec3412bb625cffbb597` — `Exercise legacy stack frame decompile`
+`0e69ef2ad308c75c2fce8753dc76eee213f83f80` — `Bypass KB for builtin integer types`
 
-Latest verified green run:
+Latest verified green integration run:
 
-- run #109
-- internal run id `33069570064`
-- head SHA `c49c327e58057a8cfd061ec3412bb625cffbb597`
+- run #117
+- internal run id `33075436583`
+- head SHA `0e69ef2ad308c75c2fce8753dc76eee213f83f80`
 - workflow `Portable CLI integration`
+- status `completed`
 - conclusion `success`
 
-No #109 logs were fetched because the run was green.
+No #117 logs were fetched because it was green.
 
-Recent runtime milestones:
+## Current runtime architecture
 
-- `d479411c1e45ce13d2293de64ecfeb8ab207e3d4` — `Initialize legacy disassembler before decompile probe` — run #107 green.
-- `1539163f8c90432699076a5ad0ff7eca1504390e` — `Expose neutral decompiler execution result` — run #108 green.
-- `c49c327e58057a8cfd061ec3412bb625cffbb597` — `Exercise legacy stack frame decompile` — run #109 green.
+Verified chain:
 
-## #106 diagnosis and resolution
+`PE32 -> IdrPeLoader -> authoritative loaded session -> MDisasm/dis.dll -> bounded neutral CFG -> procedure summaries/xrefs -> legacy Infos[] reconciliation -> neutral decompiler input -> headless prototype resolution -> explicit procedure-size resolution -> real TDecompileEnv/TDecompiler -> full Decompile() -> neutral execution result -> neutral procedure-source envelope`
 
-`77ceedc17fa238317489a19f9a01f962c865ba43` — `Run minimal legacy decompiler loop` — run #106 failed at runtime with Windows access violation `0xC0000005` while executing `idr-legacy-decompiler-runner-probe.exe`.
+The public portable boundary remains neutral; legacy `TDecompiler`, `TDecompileEnv` and `TStringList` ownership stay inside adapters/generated integration code.
 
-The failed job log was fetched exactly once. Do not fetch that #106 failed job log again.
+## Runtime-proven decompiler fixtures
 
-The concrete cause was that the full `Decompile()` loop calls `MDisasm::Disassemble()`, whose backend pointer is initialized by `Disasm.Init()`. The CLI already initialized the real `MDisasm/dis.dll` chain, but the focused #106 probe did not. The fix was confined to the portable probe; original legacy source was not modified.
+- `C3` — `RET` — full legacy `Decompile()` green.
+- `55 8B EC 5D C3` — classic stack frame — green, zero `ManualInput()`.
+- Direct `E8` call to an `ikProc` callee — green in #115.
+- Direct `E8` call to an `ikFunc` callee returning `Integer` — green in #117.
 
-Run #107 proved the corrected minimal one-byte `RET` full-loop path green.
+The direct-call fixture uses explicit caller/callee `InfoRec/procInfo`, explicit `procSize`, explicit `ProcStart`, and headless services. No size is inferred from CFG span.
 
-## Current architecture milestone
+## Direct-call failure sequence and resolution
 
-Verified runtime chain:
+- #112 (`0938c4b602c41fc865e04a2c3f125584a5d69fa9`) failed with `0xC0000005` in the new direct function-call path. Failed job log already fetched exactly once; never fetch it again.
+- #113 (`de181eea8b5433e7d0c714ebca8358069188f31f`) added flushed stage markers. It proved activation, metadata seeding and record setup succeeded; crash occurred after `decompile-enter`. Failed log already fetched exactly once; never fetch it again.
+- #114 (`22a27d2682b9a7cab7f50532a8b6aafafb03d1d2`) isolated an `ikProc` callee but exposed a probe seed-completeness mistake and exited 39 instead of crashing. Failed log already fetched exactly once; never fetch it again.
+- #115 (`5d40cf0c076307b3de00deb5f8e18f3003d9a64e`) corrected that fixture mistake and proved direct procedure calls green.
+- #116 (`872fd434d6cb8e9ea28922146d3527bdc5375d49`) restored `ikFunc(Integer)` and called `GetTypeKind("Integer")` explicitly before decompile. It crashed after `records-ready` and before the return-type marker, proving the access violation was inside `GetTypeKind(String,int*)`, before `Decompile()`. Failed log already fetched exactly once; never fetch it again.
+- Source inspection showed `GetTypeKind` performs RTTI/KnowledgeBase lookup before its later hard-coded builtin Integer branch. In the portable headless path that lookup was not safe for this builtin.
+- #117 (`0e69ef2ad308c75c2fce8753dc76eee213f83f80`) added a generated-only fast path for builtin integer types in `tests/prepare_portable_misc_full.ps1`. Original `Misc.cpp` remains untouched. The same `ikFunc(Integer)` direct-call probe is now green.
 
-`PE32 -> IdrPeLoader -> authoritative loaded session -> MDisasm/dis.dll -> bounded neutral CFG -> procedure summaries/xrefs -> legacy Infos[] reconciliation -> neutral decompiler input -> headless prototype resolution -> explicit procedure-size resolution -> real TDecompileEnv/TDecompiler -> full Decompile() -> neutral execution result`
-
-The real legacy decompiler is now runtime-proven under MSVC x86 through:
-
-`TDecompileEnv -> TDecompiler -> Init() -> InitFlags() -> SetStop() -> Decompile()`
-
-The minimal `RET` fixture and a richer classic stack-frame fixture both complete without interactive input.
-
-## Neutral decompiler execution result
-
-`IdrLegacyDecompilerRunner` remains the legacy adapter; its public API does not expose `TDecompiler`, `TDecompileEnv` or other legacy engine classes.
-
-A neutral full-decompile result now carries portable data including procedure address/size information, size source, end address, RET/completion state and decompiler body lines as standard strings. Legacy `TStringList` ownership remains on the implementation side.
-
-Run #108 verified this neutral result boundary in the primary integration workflow.
-
-## Richer no-interaction fixture
-
-Run #109 exercises a multi-instruction x86 stack-frame procedure:
-
-`55 8B EC 5D C3`
-
-which is:
-
-`PUSH EBP; MOV EBP,ESP; POP EBP; RET`
-
-This advances beyond the single-byte `RET` fixture into real stack/register state transitions while avoiding calls/imports/prototype prompts. Run #109 is green.
-
-## Explicit procedure-size invariant
+## Procedure-size invariant
 
 Current rule:
 
 `stored procSize -> session HeadlessProcedureSizeResolver -> unavailable/0`
 
-Do not infer size from:
+Never infer size from next `ProcStart`, image remainder, or CFG `observedSpan`. Never synthesize `ProcEnd`. Resolver output remains read-time unless a deliberate persistence design is introduced.
 
-- next `ProcStart`;
-- image remainder;
-- neutral CFG `observedSpan`.
+## Compatibility strategy
 
-Do not synthesize `ProcEnd`.
-
-Resolver-provided size is read-time only and is not persisted into `InfoRec`.
-
-## Neutral CFG / metadata boundaries
-
-- Neutral CFG remains independent of PE/image globals.
-- `observedSpan` is observational only.
-- Neutral prototype metadata excludes `procSize`.
-- `IdrDecompilerInput.h` is the neutral read-model builder.
-- `IdrLegacyDecompilerInput.h` is the active-session adapter only.
-- Prototype resolution uses explicit `Resolved / Unavailable / Rejected` policy and never fabricates missing return/argument types.
-- CFG-discovered procedures reconcile into active `Infos[]` idempotently; existing valid procedure records are reused and no size is inferred from CFG span.
-
-## CI
-
-Primary workflow:
-
-`.github/workflows/portable-core-integration.yml`
-
-Platform:
-
-- stock GitHub-hosted Windows runner;
-- MSVC x86;
-- generated portable legacy translation units;
-- shipped real x86 `dis.dll` decoder path.
-
-x86 remains intentional because the shipped decoder and legacy engine path are x86.
-
-### Actions discipline
-
-- Never push while a relevant workflow run is active.
-- Green run: metadata/status only; do not fetch logs.
-- Red run: metadata -> jobs -> failed job log exactly once.
-- Never fetch the same failed job log twice.
-
-Preferred push-run discovery:
-
-`GitHub.fetch("https://api.github.com/repos/jonsan1969/IDR/actions/runs?branch=agent%2Fportable-cli&event=push&per_page=20")`
-
-The collection endpoint is working in the current connector session.
-
-If it returns `endpoint not allowed`, capability-check GitHub tools with queries such as `workflow run`, `actions`, or `runs`. If no branch/push run-listing capability exists, state that explicitly. Do not use `fetch_commit_workflow_runs` as a substitute because it is PR-triggered-run limited.
-
-Once a `run_id` is known, use `fetch_workflow_run_jobs`; fetch `fetch_workflow_job_logs` only for a failed job and only once.
-
-## Git write discipline
-
-All active-branch writes use:
-
-`create_blob -> create_tree -> create_commit -> update_ref`
-
-Before writes:
-
-1. verify current branch HEAD;
-2. verify no relevant workflow is active;
-3. build from that exact current tree;
-4. use non-forced fast-forward ref update.
-
-Do not intentionally use contents-API `create_file` / `update_file` for branch writes.
-
-## Legacy-source discipline
-
-Preserve original legacy source unless a deliberate structural porting decision requires otherwise.
-
-Prefer:
+Preserve original legacy source unless a deliberate structural port is required. Prefer:
 
 - portable adapters;
 - generated portable copies;
-- narrow explicit policies/services;
-- runtime-reached compatibility shims.
+- narrow runtime-reached compatibility shims;
+- explicit headless policy/service seams.
 
-Do not build a broad fake-GUI/dialog layer.
+The generated Misc path already ports Borland `Pos`, `SubString`, `LastDelimiter`, `Length`, trimming and related APIs. Direct Borland 1-based indexing remains a known compatibility risk and should only be changed when runtime evidence reaches a specific site.
 
 ## Known risks
 
-- Borland `String` direct indexing is 1-based versus `std::string` 0-based.
-- `WideString`, `Variant`, `Currency`, `Comp` and formatting compatibility remain transitional.
-- Exact legacy flag-range boundary fidelity remains open.
-- Neutral CFG still lacks indirect calls/jumps and jump-table/switch handling.
-- Legacy decompiler routines can mutate locals, args, flags and `InfoRec`; neutral ownership/mutation semantics must remain explicit.
-- Remaining `ManualInput()` families include imports/return-byte questions, `@DispInvoke`, unknown function types, indirect calls and some virtual/interface dispatch cases.
+- Borland `String` 1-based indexing versus `std::string` 0-based indexing.
+- Transitional `WideString`, `Variant`, `Currency`, `Comp` and formatting behavior.
+- Exact legacy flag-range boundary fidelity.
+- Indirect calls/jumps and jump-table/switch handling.
+- Legacy decompiler mutation of locals/args/flags/`InfoRec`.
+- Remaining `ManualInput()` families: import return-byte questions, `@DispInvoke`, unknown function types, indirect calls and some virtual/interface dispatch cases.
+- Type resolution that genuinely requires RTTI/KnowledgeBase still needs evidence-driven hardening; #117 only bypasses KB for already-known builtin integer types.
+
+## CI discipline
+
+Primary push-run discovery:
+
+`GitHub.fetch("https://api.github.com/repos/jonsan1969/IDR/actions/runs?branch=agent%2Fportable-cli&event=push&per_page=20")`
+
+- Never push over an active relevant run.
+- Green run: metadata/status only; no log.
+- Red run: metadata -> jobs -> failed job log exactly once.
+- Never fetch the same failed log twice.
+- If branch push-run discovery is unavailable, capability-check connector tools and state the gap explicitly. Do not substitute PR-limited `fetch_commit_workflow_runs`.
+
+## Git write discipline
+
+All active-branch writes:
+
+`create_blob -> create_tree -> create_commit -> update_ref`
+
+Verify HEAD and relevant run state immediately before writing. Use non-forced fast-forward ref updates.
 
 ## Immediate next phase
 
-1. Advance from the green #109 stack-frame fixture to the smallest deterministic fixture that produces meaningful neutral body output.
-2. Keep `manualInput` counting enabled and require zero calls.
-3. Stop at the first runtime-reached unresolved interactive dependency; model only that specific family with an explicit headless policy.
-4. Preserve the neutral result boundary; do not expose legacy engine classes.
-5. Continue controlled Delphi Win32 fixture comparison against original IDR.
-6. Later expose deterministic `idr-cli.exe` output and publish `idr-cli.exe + dis.dll` artifacts.
+The direct procedure/function call baseline is now green. Next frontier:
 
-## Working rules
-
-- Compiler/linker/runtime evidence before speculation.
-- One coherent architecture commit at a time.
-- Frozen branches and `main` stay untouched.
-- Green runs: metadata/status only.
-- Failed runs: metadata -> jobs -> failed log exactly once.
-- Keep these docs synchronized at meaningful runtime milestones.
+1. exercise the next smallest real call-family that introduces prototype/argument behavior without broad GUI emulation;
+2. keep `manualInput` counting enabled and require zero calls where metadata is complete;
+3. prefer a deterministic direct function with one explicit argument or another builtin return type before moving to imports/indirect dispatch;
+4. stop at the first runtime-reached unresolved dependency and model only that family;
+5. keep consuming output through neutral result/source envelopes;
+6. later expose deterministic CLI decompiler output and publish `idr-cli.exe + dis.dll` artifacts.

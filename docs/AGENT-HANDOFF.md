@@ -5,14 +5,8 @@ Last updated: 2026-08-27
 ## Repository and branches
 
 Repository: `jonsan1969/IDR`
-
 Active branch: `agent/portable-cli`
-
-Frozen / do not modify:
-
-- `main`
-- `agent/portable-core-integration`
-- `agent/portable-core-smoke`
+Frozen / do not modify: `main`, `agent/portable-core-integration`, `agent/portable-core-smoke`.
 
 The repository is the source of truth. Never use old chat memory as current status.
 
@@ -20,114 +14,96 @@ The repository is the source of truth. Never use old chat memory as current stat
 
 Immediately before this docs-only update:
 
-`c49c327e58057a8cfd061ec3412bb625cffbb597` — `Exercise legacy stack frame decompile`
+`0e69ef2ad308c75c2fce8753dc76eee213f83f80` — `Bypass KB for builtin integer types`
 
-Always verify `agent/portable-cli` HEAD again before any future write.
+Always verify `agent/portable-cli` HEAD again before future writes.
 
 ## Latest verified green run
 
-Run #109 is green:
+Run #117:
 
-- internal run id `33069570064`
-- head SHA `c49c327e58057a8cfd061ec3412bb625cffbb597`
+- internal id `33075436583`
+- head SHA `0e69ef2ad308c75c2fce8753dc76eee213f83f80`
 - workflow `Portable CLI integration`
 - status `completed`
 - conclusion `success`
 
-No green-run logs were fetched.
-
-Recent green milestones:
-
-- #107 `d479411c1e45ce13d2293de64ecfeb8ab207e3d4` — initialize real legacy disassembler before full decompile probe.
-- #108 `1539163f8c90432699076a5ad0ff7eca1504390e` — expose neutral full-decompiler execution result.
-- #109 `c49c327e58057a8cfd061ec3412bb625cffbb597` — exercise multi-instruction stack-frame decompile.
-
-## #106 evidence — do not re-fetch its failed log
-
-Run #106 (`77ceedc17fa238317489a19f9a01f962c865ba43`) failed at runtime with `0xC0000005` access violation while running the full legacy decompiler probe. Compiler and linker had succeeded.
-
-The failed #106 job log has already been fetched exactly once. Never fetch it again.
-
-Root cause: the focused probe reached `MDisasm::Disassemble()` without first calling `Disasm.Init()`, leaving the decoder backend unavailable. The normal CLI already performed this initialization. The fix was made in the portable probe, not original legacy source. Run #107 confirmed the diagnosis by going green.
+No #117 logs were fetched.
 
 ## Current architecture
 
 Verified runtime chain:
 
-`PE32 -> IdrPeLoader -> authoritative loaded session -> MDisasm/dis.dll -> bounded neutral CFG -> procedure summaries/xrefs -> legacy Infos[] reconciliation -> neutral decompiler input -> explicit headless prototype resolution -> explicit procedure-size resolution -> TDecompileEnv/TDecompiler -> full Decompile() -> neutral execution result`
+`PE32 -> IdrPeLoader -> authoritative loaded session -> MDisasm/dis.dll -> bounded neutral CFG -> procedure summaries/xrefs -> legacy Infos[] reconciliation -> neutral decompiler input -> explicit prototype policy -> explicit procedure-size policy -> real TDecompileEnv/TDecompiler -> full Decompile() -> neutral execution result -> neutral source envelope`
 
-Important boundaries:
+Important invariants:
 
-- Neutral CFG stays independent of PE/image globals.
-- `observedSpan` is observational only and never becomes legacy `procInfo->procSize`.
+- `observedSpan` is not legacy `procInfo->procSize`.
 - Never synthesize `ProcEnd`.
-- Procedure size rule is `stored procSize -> explicit session HeadlessProcedureSizeResolver -> unavailable/0`.
-- `IdrDecompilerInput.h` is the neutral decompiler read model; `IdrLegacyDecompilerInput.h` is only the legacy-session adapter.
-- Prototype resolution is explicit and never fabricates missing return/argument types.
-- `IdrLegacyDecompilerRunner` contains legacy engine classes; its public API exposes portable result types only.
-- The neutral execution result is the boundary future CLI/output code should consume.
+- Size rule: `stored procSize -> explicit HeadlessProcedureSizeResolver -> unavailable/0`.
+- Prototype resolution never fabricates missing return/argument types.
+- Legacy engine classes stay behind `IdrLegacyDecompilerRunner`.
+- The source wrapper does not call GUI/presentation-owned `TDecompileEnv::DecompileProc()`.
 
-## Runtime-proven decompiler fixtures
+## Runtime-proven fixtures
 
-Minimal fixture:
+- one-byte `RET` full decompile;
+- classic stack frame `55 8B EC 5D C3`;
+- direct E8 call to `ikProc` callee — #115 green;
+- direct E8 call to `ikFunc` callee returning `Integer` — #117 green.
 
-`C3` — `RET`
+All direct-call metadata is explicit: caller/callee `InfoRec/procInfo`, `procSize`, and `ProcStart` are prepopulated; no size inference is used.
 
-Proven green through full `Decompile()` with zero `ManualInput()` calls.
+## Direct-call diagnosis history
 
-Richer fixture:
+- #112 direct function call: runtime `0xC0000005`; failed log fetched exactly once.
+- #113 stage tracing: activation, session, metadata and records all passed; crash after `decompile-enter`; failed log fetched exactly once.
+- #114 procedure isolation accidentally used the wrong `functionKind` argument to `BuildLegacyProcedureMetadataSeed`, causing controlled exit 39; failed log fetched exactly once.
+- #115 corrected fixture: direct procedure call green.
+- #116 restored `ikFunc(Integer)` and explicitly called `GetTypeKind("Integer")` before decompile. Runtime reached `records-ready` but not the next marker, proving the AV was inside `GetTypeKind(String,int*)`; failed log fetched exactly once.
+- #117 fixed the portable generated Misc path by classifying already-known builtin integer types before RTTI/KnowledgeBase lookup. Original `Misc.cpp` was not modified. Same direct function probe then went green.
 
-`55 8B EC 5D C3` — `PUSH EBP; MOV EBP,ESP; POP EBP; RET`
-
-Run #109 green. This exercises multiple decoded instructions and stack/register state without calls/imports/interactivity.
+Never fetch failed logs again for #106, #110, #112, #113, #114, or #116.
 
 ## Exact next technical frontier
 
-Starting from #109:
+Advance one dimension beyond the now-green direct-call baseline. Preferred next experiment:
 
-1. choose the smallest deterministic x86 procedure that produces meaningful decompiler body output rather than only frame/return state;
-2. exercise it through `DecompileActiveLegacyProcedure()` and inspect only the neutral result;
-3. keep a counting `manualInput` service installed and require zero calls;
-4. if green, advance incrementally;
-5. at the first runtime-reached unresolved interactive dependency, stop and add a narrow explicit headless policy for that family only;
-6. do not expose legacy GUI/list/decompiler classes to portable callers.
+1. direct callee with one explicit argument and complete neutral/legacy prototype metadata;
+2. keep the call target and return type deterministic (Integer is now proven safe);
+3. require zero `ManualInput()` calls;
+4. inspect only neutral execution/source results;
+5. if a new runtime dependency appears, localize it with flushed probe markers before changing architecture;
+6. prefer generated adapters/policies over modifying original legacy source.
 
-Do not jump ahead to broad interaction emulation or rewrite original legacy decompiler behavior without runtime evidence.
+A different simple builtin return type is a reasonable alternate frontier, but do not combine multiple new dimensions in one commit.
 
-## GitHub Actions push-run discovery
+## Known risks
+
+- Borland String 1-based indexing versus `std::string` 0-based indexing.
+- Genuine RTTI/KnowledgeBase-dependent type resolution is not broadly hardened; #117 only bypasses KB for already-known builtin integers.
+- Transitional `WideString`, `Variant`, `Currency`, `Comp` and formatting compatibility.
+- Exact flag-range fidelity.
+- Indirect calls/jumps and jump-table/switch behavior.
+- Decompiler mutation of locals/args/flags/`InfoRec`.
+- Remaining interactive families: imports/return-byte questions, `@DispInvoke`, unknown function types, indirect calls, virtual/interface dispatch.
+
+## GitHub Actions discovery
 
 Primary route:
 
 `GitHub.fetch("https://api.github.com/repos/jonsan1969/IDR/actions/runs?branch=agent%2Fportable-cli&event=push&per_page=20")`
 
-This endpoint is currently working.
+Green: metadata only, no logs.
+Red: metadata -> `fetch_workflow_run_jobs` -> failed job -> `fetch_workflow_job_logs` exactly once.
 
-Then:
-
-- locate the requested `run_number`;
-- verify `head_sha`;
-- take internal run `id`;
-- green: metadata only, no logs;
-- red: `fetch_workflow_run_jobs` -> failed job -> `fetch_workflow_job_logs` exactly once.
-
-If the collection endpoint becomes blocked:
-
-1. capability-check GitHub tools for `workflow run`, `actions`, or `runs`;
-2. if no branch/push run-list function exists, state the connector gap explicitly;
-3. do not use `fetch_commit_workflow_runs` because it is PR-run limited.
+If the collection endpoint is blocked, capability-check GitHub tools for `workflow run`, `actions`, or `runs`. If no branch/push run listing exists, state the connector gap explicitly. Never substitute PR-limited `fetch_commit_workflow_runs`.
 
 ## CI / log discipline
 
-- Never push over an active relevant run.
-- Green run: metadata/status only.
-- Red run: metadata -> jobs -> failed job log exactly once.
-- Never fetch the same failed job log repeatedly.
-
-Primary workflow:
-
-`.github/workflows/portable-core-integration.yml`
-
-`docs/**` is under `paths-ignore`; docs-only commits should not start the normal integration run while that workflow setting remains unchanged.
+- Never push over an active relevant workflow run.
+- Never re-fetch a failed log already consumed.
+- `docs/**` is under `paths-ignore`; docs-only commits should not start normal integration while that remains true.
 
 ## Atomic Git write discipline
 
@@ -135,30 +111,11 @@ All active-branch writes:
 
 `create_blob -> create_tree -> create_commit -> update_ref`
 
-Rules:
-
-- verify branch HEAD immediately before writes;
-- verify no active relevant workflow;
-- build from the current tree;
-- current HEAD is the commit parent;
-- non-forced fast-forward `update_ref` only;
-- do not intentionally use `create_file` / `update_file` for branch writes;
-- no PR/merge to `main` yet.
+Before writing: verify current branch HEAD and no active relevant run. Use current HEAD as parent and non-forced fast-forward `update_ref`.
 
 ## Legacy-source discipline
 
-Do not modify original legacy source unless it is a conscious structural porting decision.
-
-Prefer portable adapters, generated portable copies, explicit policy/service seams and runtime-reached compatibility fixes.
-
-## Known risks
-
-- Borland `String` indexing (1-based) versus `std::string` (0-based).
-- Transitional `WideString`, `Variant`, `Currency`, `Comp` and formatting compatibility.
-- Exact legacy flag-range boundary fidelity.
-- Indirect calls/jumps and jump-table/switch CFG behavior.
-- Legacy decompiler mutation of locals/args/flags/`InfoRec`.
-- Remaining `ManualInput()` families: import return-byte questions, `@DispInvoke`, unknown function types, indirect calls and some virtual/interface dispatch cases.
+Do not modify original legacy source unless making a conscious structural porting decision. Prefer adapters, generated portable copies, explicit policy/service seams, and runtime-reached compatibility fixes.
 
 ## Files to read first in every continuation
 

@@ -158,9 +158,6 @@ int main() {
 
     idr::core::ResetLegacyLoadedPeSession();
 
-    // First direct-call fixture. Both caller and callee carry explicit legacy
-    // metadata and sizes so any remaining interaction is call-path evidence,
-    // not a hidden procedure-size or prototype-completeness fallback.
     constexpr idr::core::DWord kCalleeAddress = kAddress + 0x10u;
     idr::core::LoadedPeImage callImage;
     callImage.bytes.assign(0x20, 0x90);
@@ -182,7 +179,9 @@ int main() {
     callImage.entryPoint = kAddress;
     callImage.codeBase = kAddress;
     callImage.codeSize = static_cast<idr::core::DWord>(callImage.bytes.size());
+    std::cout << "direct-call-stage=activate\n" << std::flush;
     idr::core::ActivateLegacyLoadedPeSession(callImage);
+    std::cout << "direct-call-stage=session-active\n" << std::flush;
 
     if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(kAddress, seed)) return 38;
     idr::core::ProcedurePrototypeMetadata calleePrototype;
@@ -191,6 +190,7 @@ int main() {
     idr::core::LegacyProcedureMetadataSeed calleeSeed;
     if (!idr::core::BuildLegacyProcedureMetadataSeed(calleePrototype, ikFunc, calleeSeed)) return 39;
     if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(kCalleeAddress, calleeSeed)) return 40;
+    std::cout << "direct-call-stage=metadata-seeded\n" << std::flush;
 
     const auto callSession = idr::core::GetLegacyImageSessionView();
     if (!callSession.infos || !callSession.infos[0] || !callSession.infos[0x10]) return 41;
@@ -201,11 +201,14 @@ int main() {
     calleeRecord->procInfo->procSize = 6;
     idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 0);
     idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 0x10);
+    std::cout << "direct-call-stage=records-ready\n" << std::flush;
 
     manualInputCalls = 0;
     idr::core::SetLegacyServices(&services);
     idr::core::ProcedureSourceResult callRun;
+    std::cout << "direct-call-stage=decompile-enter\n" << std::flush;
     if (!idr::core::DecompileActiveLegacyProcedureSource(kAddress, callRun)) return 43;
+    std::cout << "direct-call-stage=decompile-returned\n" << std::flush;
     if (!callRun.completed || callRun.procedureAddress != kAddress ||
         callRun.procedureSize != 6 ||
         callRun.procedureSizeSource != idr::core::ProcedureSizeSource::LegacyMetadata)

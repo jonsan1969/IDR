@@ -98,6 +98,12 @@ $src = $src -creplace 'String\(\(int\)\s*Val\)', 'std::to_string(static_cast<int
 $src = $src -creplace 'String\(static_cast<int>\(([^\)]+)\)\)', 'std::to_string(static_cast<int>($1))'
 $src = $src -creplace 'String\(b\)\.PortableTrim\(\)', 'PortableTrim(String(b))'
 
+# Built-in scalar types do not require RTTI or KnowledgeBase state. The legacy
+# implementation checks these again later, after KB lookup; move the same
+# semantics into the generated headless fast path so primitive return types
+# remain safe before the GUI-era KB lifecycle has been established.
+$src = $src -replace 'if \(SameText\(name, "Dword"\)\)\s*return ikInteger;', 'if (SameText(name, "Dword") || SameText(name, "ShortInt") || SameText(name, "SmallInt") || SameText(name, "Integer") || SameText(name, "LongInt") || SameText(name, "LongWord") || SameText(name, "Cardinal")) return ikInteger;'
+
 $src = $src -replace 'if \(Val\.Type\(\) == varString\) return VarToStr\(Val\);', ''
 $src = $src -replace 'return VarToStr\(Val\);', 'return std::to_string(static_cast<long long>(Val));'
 $src = $src -replace 'Format\("''%s''", ARRAYOFCONST\(\(\(Char\)Val\)\)\)', 'PortableQuotedChar(Val)'

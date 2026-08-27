@@ -143,8 +143,6 @@ int main() {
     if (manualInputCalls != 0) return 29;
     if (frameRecord->procInfo->procSize != 5) return 30;
 
-    // Build a portable source envelope around the already proven low-level
-    // legacy decompile result. Do not depend on the GUI-owned DecompileProc().
     manualInputCalls = 0;
     idr::core::ProcedureSourceResult sourceRun;
     if (!idr::core::DecompileActiveLegacyProcedureSource(kAddress, sourceRun)) return 31;
@@ -159,6 +157,64 @@ int main() {
     if (frameRecord->procInfo->procSize != 5) return 37;
 
     idr::core::ResetLegacyLoadedPeSession();
+
+    // First direct-call fixture. Both caller and callee carry explicit legacy
+    // metadata and sizes so any remaining interaction is call-path evidence,
+    // not a hidden procedure-size or prototype-completeness fallback.
+    constexpr idr::core::DWord kCalleeAddress = kAddress + 0x10u;
+    idr::core::LoadedPeImage callImage;
+    callImage.bytes.assign(0x20, 0x90);
+    callImage.bytes[0] = 0xE8;
+    callImage.bytes[1] = 0x0B;
+    callImage.bytes[2] = 0x00;
+    callImage.bytes[3] = 0x00;
+    callImage.bytes[4] = 0x00;
+    callImage.bytes[5] = 0xC3;
+    callImage.bytes[0x10] = 0xB8;
+    callImage.bytes[0x11] = 0x07;
+    callImage.bytes[0x12] = 0x00;
+    callImage.bytes[0x13] = 0x00;
+    callImage.bytes[0x14] = 0x00;
+    callImage.bytes[0x15] = 0xC3;
+    callImage.segments.push_back({kAddress, callImage.bytes.size(), 0});
+    callImage.imageBase = 0x00400000u;
+    callImage.imageSize = 0x4000u;
+    callImage.entryPoint = kAddress;
+    callImage.codeBase = kAddress;
+    callImage.codeSize = static_cast<idr::core::DWord>(callImage.bytes.size());
+    idr::core::ActivateLegacyLoadedPeSession(callImage);
+
+    if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(kAddress, seed)) return 38;
+    idr::core::ProcedurePrototypeMetadata calleePrototype;
+    calleePrototype.kind = ikFunc;
+    calleePrototype.returnType = "Integer";
+    idr::core::LegacyProcedureMetadataSeed calleeSeed;
+    if (!idr::core::BuildLegacyProcedureMetadataSeed(calleePrototype, ikFunc, calleeSeed)) return 39;
+    if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(kCalleeAddress, calleeSeed)) return 40;
+
+    const auto callSession = idr::core::GetLegacyImageSessionView();
+    if (!callSession.infos || !callSession.infos[0] || !callSession.infos[0x10]) return 41;
+    PInfoRec callerRecord = static_cast<PInfoRec>(callSession.infos[0]);
+    PInfoRec calleeRecord = static_cast<PInfoRec>(callSession.infos[0x10]);
+    if (!callerRecord || !callerRecord->procInfo || !calleeRecord || !calleeRecord->procInfo) return 42;
+    callerRecord->procInfo->procSize = 6;
+    calleeRecord->procInfo->procSize = 6;
+    idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 0);
+    idr::core::LegacyAnalysisState().SetFlag(idr::core::CodeFlags::ProcStart, 0x10);
+
+    manualInputCalls = 0;
+    idr::core::SetLegacyServices(&services);
+    idr::core::ProcedureSourceResult callRun;
+    if (!idr::core::DecompileActiveLegacyProcedureSource(kAddress, callRun)) return 43;
+    if (!callRun.completed || callRun.procedureAddress != kAddress ||
+        callRun.procedureSize != 6 ||
+        callRun.procedureSizeSource != idr::core::ProcedureSizeSource::LegacyMetadata)
+        return 44;
+    if (manualInputCalls != 0) return 45;
+    if (callRun.body.size() < 3 || callRun.body.front() != "begin" || callRun.body.back() != "end") return 46;
+    if (callerRecord->procInfo->procSize != 6 || calleeRecord->procInfo->procSize != 6) return 47;
+
+    idr::core::ResetLegacyLoadedPeSession();
     std::cout << "legacy-decompiler-runner-preflight=ok\n";
     std::cout << "headless-procedure-size-policy=ok\n";
     std::cout << "legacy-procedure-size-bridge=ok\n";
@@ -166,5 +222,6 @@ int main() {
     std::cout << "neutral-decompiler-result=ok\n";
     std::cout << "legacy-decompiler-stack-frame=ok\n";
     std::cout << "neutral-procedure-source=ok\n";
+    std::cout << "legacy-decompiler-direct-call=ok\n";
     return 0;
 }

@@ -187,7 +187,7 @@ int main() {
     idr::core::ProcedurePrototypeMetadata calleePrototype;
     calleePrototype.kind = ikProc;
     idr::core::LegacyProcedureMetadataSeed calleeSeed;
-    if (!idr::core::BuildLegacyProcedureMetadataSeed(calleePrototype, ikProc, calleeSeed)) return 39;
+    if (!idr::core::BuildLegacyProcedureMetadataSeed(calleePrototype, ikFunc, calleeSeed)) return 39;
     if (!idr::core::ApplyLegacyProcedureMetadataSeedToActiveSession(kCalleeAddress, calleeSeed)) return 40;
     std::cout << "direct-call-stage=metadata-seeded\n" << std::flush;
 

@@ -1,6 +1,6 @@
 # Agent Handoff — IDR Portable CLI
 
-Last updated: 2026-08-27
+Last updated: 2026-08-28
 
 ## Repository and branches
 
@@ -14,21 +14,21 @@ The repository is the source of truth. Never use old chat memory as current stat
 
 Immediately before this docs-only update:
 
-`0e69ef2ad308c75c2fce8753dc76eee213f83f80` — `Bypass KB for builtin integer types`
+`8bd65445cd69a4b73dee73e6fbf7711bb7b3d18a` — `Exercise two register arguments`
 
 Always verify `agent/portable-cli` HEAD again before future writes.
 
 ## Latest verified green run
 
-Run #117:
+Run #120:
 
-- internal id `33075436583`
-- head SHA `0e69ef2ad308c75c2fce8753dc76eee213f83f80`
+- internal id `33104933853`
+- head SHA `8bd65445cd69a4b73dee73e6fbf7711bb7b3d18a`
 - workflow `Portable CLI integration`
 - status `completed`
 - conclusion `success`
 
-No #117 logs were fetched.
+No #120 jobs or logs were fetched.
 
 ## Current architecture
 
@@ -50,43 +50,49 @@ Important invariants:
 - one-byte `RET` full decompile;
 - classic stack frame `55 8B EC 5D C3`;
 - direct E8 call to `ikProc` callee — #115 green;
-- direct E8 call to `ikFunc` callee returning `Integer` — #117 green.
+- direct E8 call to `ikFunc` callee returning `Integer` — #117 green;
+- direct Integer-returning call with one explicit EAX value argument — #119 green;
+- direct Integer-returning call with two explicit register arguments EAX + ECX — #120 green.
 
-All direct-call metadata is explicit: caller/callee `InfoRec/procInfo`, `procSize`, and `ProcStart` are prepopulated; no size inference is used.
+Call/prototype metadata is explicit and round-tripped through the neutral/legacy adapter. Complete metadata is required to keep `ManualInput()` at zero. No procedure size is inferred from CFG span.
 
-## Direct-call diagnosis history
+## Relevant diagnosis history
 
 - #112 direct function call: runtime `0xC0000005`; failed log fetched exactly once.
-- #113 stage tracing: activation, session, metadata and records all passed; crash after `decompile-enter`; failed log fetched exactly once.
-- #114 procedure isolation accidentally used the wrong `functionKind` argument to `BuildLegacyProcedureMetadataSeed`, causing controlled exit 39; failed log fetched exactly once.
-- #115 corrected fixture: direct procedure call green.
-- #116 restored `ikFunc(Integer)` and explicitly called `GetTypeKind("Integer")` before decompile. Runtime reached `records-ready` but not the next marker, proving the AV was inside `GetTypeKind(String,int*)`; failed log fetched exactly once.
-- #117 fixed the portable generated Misc path by classifying already-known builtin integer types before RTTI/KnowledgeBase lookup. Original `Misc.cpp` was not modified. Same direct function probe then went green.
+- #113 stage tracing: crash after `decompile-enter`; failed log fetched exactly once.
+- #114 fixture seed mistake: controlled exit 39; failed log fetched exactly once.
+- #115 direct procedure call green.
+- #116 `GetTypeKind("Integer")` localized AV before decompile; failed log fetched exactly once.
+- #117 generated-only builtin Integer classification bypassed unsafe RTTI/KB lookup for already-known builtin integers; original `Misc.cpp` untouched.
+- #119 one register argument green.
+- #120 two register arguments green.
 
 Never fetch failed logs again for #106, #110, #112, #113, #114, or #116.
 
 ## Exact next technical frontier
 
-Advance one dimension beyond the now-green direct-call baseline. Preferred next experiment:
+Stop expanding synthetic register-argument coverage for now. The next frontier is the real CLI boundary:
 
-1. direct callee with one explicit argument and complete neutral/legacy prototype metadata;
-2. keep the call target and return type deterministic (Integer is now proven safe);
-3. require zero `ManualInput()` calls;
-4. inspect only neutral execution/source results;
-5. if a new runtime dependency appears, localize it with flushed probe markers before changing architecture;
-6. prefer generated adapters/policies over modifying original legacy source.
+1. use the existing real PE32 CLI fixture as the controlled integration target;
+2. identify an explicit authoritative procedure-size source for exactly one real analyzed procedure, without using CFG `observedSpan` as `procSize`;
+3. link/use `IdrLegacyDecompilerRunner` from `idr-cli.exe` only for procedures whose size contract is satisfied;
+4. call `DecompileActiveLegacyProcedureSource()` for one controlled procedure;
+5. require deterministic source-envelope output and zero unexpected `ManualInput()`;
+6. fail/report unsupported procedures explicitly instead of fabricating metadata;
+7. once green, extend deterministic CLI output and prepare `idr-cli.exe + dis.dll` artifacts for external guinea-pig testing.
 
-A different simple builtin return type is a reasonable alternate frontier, but do not combine multiple new dimensions in one commit.
+Do not combine this first CLI bridge with imports, indirect dispatch, stack arguments or broad calling-convention work.
 
 ## Known risks
 
-- Borland String 1-based indexing versus `std::string` 0-based indexing.
-- Genuine RTTI/KnowledgeBase-dependent type resolution is not broadly hardened; #117 only bypasses KB for already-known builtin integers.
-- Transitional `WideString`, `Variant`, `Currency`, `Comp` and formatting compatibility.
-- Exact flag-range fidelity.
-- Indirect calls/jumps and jump-table/switch behavior.
-- Decompiler mutation of locals/args/flags/`InfoRec`.
-- Remaining interactive families: imports/return-byte questions, `@DispInvoke`, unknown function types, indirect calls, virtual/interface dispatch.
+- authoritative procedure-size discovery for real PE32 procedures;
+- Borland String 1-based indexing versus `std::string` 0-based indexing;
+- genuine RTTI/KnowledgeBase-dependent type resolution beyond known builtin integers;
+- `WideString`, `Variant`, `Currency`, `Comp` and formatting compatibility;
+- exact flag-range fidelity;
+- indirect calls/jumps and jump-table/switch behavior;
+- decompiler mutation of locals/args/flags/`InfoRec`;
+- remaining interactive families: imports/return-byte questions, `@DispInvoke`, unknown function types, indirect calls, virtual/interface dispatch.
 
 ## GitHub Actions discovery
 
@@ -94,7 +100,7 @@ Primary route:
 
 `GitHub.fetch("https://api.github.com/repos/jonsan1969/IDR/actions/runs?branch=agent%2Fportable-cli&event=push&per_page=20")`
 
-Green: metadata only, no logs.
+Green: metadata only, no jobs/logs.
 Red: metadata -> `fetch_workflow_run_jobs` -> failed job -> `fetch_workflow_job_logs` exactly once.
 
 If the collection endpoint is blocked, capability-check GitHub tools for `workflow run`, `actions`, or `runs`. If no branch/push run listing exists, state the connector gap explicitly. Never substitute PR-limited `fetch_commit_workflow_runs`.

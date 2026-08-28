@@ -1,6 +1,6 @@
 # IDR Portable Core - Technical Notes
 
-Last updated: 2026-08-27
+Last updated: 2026-08-28
 
 Technical journal for the MSVC/GitHub-hosted portable-core and CLI work.
 
@@ -16,21 +16,17 @@ Repository state is authoritative. Verify `agent/portable-cli` HEAD before every
 
 Current code HEAD before this docs-only update:
 
-`0e69ef2ad308c75c2fce8753dc76eee213f83f80` — `Bypass KB for builtin integer types`
+`8bd65445cd69a4b73dee73e6fbf7711bb7b3d18a` — `Exercise two register arguments`
 
-Run #117 is verified green. No green-run logs were fetched.
+Run #120 is verified green. No green-run jobs or logs were fetched.
 
 Recent relevant sequence:
 
-- #109 `c49c327e58057a8cfd061ec3412bb625cffbb597` — stack-frame decompile — green.
-- #110 `e1b0c43677eb288444706a0ea14976d58ca304be` — attempted legacy `DecompileProc()` source capture — link failure; failed log already fetched once.
-- #111 `050753b9f6ec1e23339d71cd1e8da118f674b570` — neutral source wrapper over low-level legacy execution — green.
-- #112 `0938c4b602c41fc865e04a2c3f125584a5d69fa9` — first direct function call — runtime AV; failed log already fetched once.
-- #113 `de181eea8b5433e7d0c714ebca8358069188f31f` — direct-call stage tracing — runtime AV after `decompile-enter`; failed log already fetched once.
-- #114 `22a27d2682b9a7cab7f50532a8b6aafafb03d1d2` — procedure isolation with incorrect seed completeness argument — controlled exit 39; failed log already fetched once.
 - #115 `5d40cf0c076307b3de00deb5f8e18f3003d9a64e` — direct `ikProc` call — green.
 - #116 `872fd434d6cb8e9ea28922146d3527bdc5375d49` — explicit `GetTypeKind("Integer")` diagnostic — runtime AV before decompile; failed log already fetched once.
 - #117 `0e69ef2ad308c75c2fce8753dc76eee213f83f80` — generated builtin integer fast path — direct `ikFunc(Integer)` call green.
+- #119 `55dde09d002fbc08ba06d9bc5b8d131feab85146` — one explicit value argument in EAX with complete neutral/legacy prototype round-trip — green.
+- #120 `8bd65445cd69a4b73dee73e6fbf7711bb7b3d18a` — two explicit register arguments in EAX + ECX, retaining the one-argument regression — green.
 
 Never re-fetch failed logs for #106, #110, #112, #113, #114, or #116.
 
@@ -42,39 +38,35 @@ The portable path is runtime-proven through:
 
 The neutral source wrapper deliberately avoids GUI/presentation-owned `TDecompileEnv::DecompileProc()`. `DecompileActiveLegacyProcedureSource()` wraps the low-level result with portable `begin`/`end` lines and keeps legacy engine ownership private.
 
-## Direct call evidence
+## Direct-call / argument evidence
 
-The fixture uses caller at `0x00403000`:
+The original direct-call fixture proved procedure and Integer-returning function calls. #119 then added a deterministic caller that loads EAX before a direct E8 call and supplies one complete argument descriptor:
 
-`E8 0B 00 00 00; C3`
+- tag `0x21` (`val`);
+- register argument;
+- register index `0` (EAX);
+- size `4`;
+- type `Integer`.
 
-and callee at `+0x10`:
+Metadata is captured back through `CaptureLegacyProcedurePrototypeMetadata()` and checked exactly before decompile. #119 went green with zero `ManualInput()`.
 
-`B8 07 00 00 00; C3`
+#120 keeps that regression and adds the next register argument, index `1` (ECX), with the same explicit Integer metadata. The full legacy decompiler path remains green. This proves that the portable metadata bridge is not limited to a single register argument.
 
-The rel32 target is correct: current + 5 + 0x0B = `+0x10`.
-
-Both caller and callee records are explicitly seeded into the active `Infos[]` session, both have explicit `procSize = 6`, and both have explicit `ProcStart` flags.
-
-Run #115 proves this path for `ikProc`.
-
-Run #117 proves the same path for `ikFunc` returning `Integer`.
+No stack-argument or new calling-convention behavior has been introduced yet.
 
 ## #116 localization and #117 fix
 
-#116 inserted an explicit `GetTypeKind("Integer", &size)` call immediately before decompile. Runtime markers reached `records-ready` but not the marker after `GetTypeKind`, and the process exited with Windows `0xC0000005`.
+#116 proved the AV was inside legacy `GetTypeKind(String,int*)`, before `Decompile()`. Source inspection showed RTTI/KnowledgeBase lookup happens before the later hard-coded builtin Integer branch.
 
-That proves the direct function crash was not in the E8 target, caller/callee record setup, `Decompile()`, or EAX return-result handling. It was inside legacy `GetTypeKind(String,int*)`.
+The fix remains confined to `tests/prepare_portable_misc_full.ps1`: generated `Misc.portable.cpp` receives an early builtin-integer classification path. Original `Misc.cpp` remains untouched.
 
-Source inspection showed `GetTypeKind` checks RTTI and KnowledgeBase before reaching its later hard-coded builtin Integer branch. In the portable headless session, that lookup path is not a safe prerequisite for a type already known to be builtin.
+## Current CLI gap
 
-The fix is confined to `tests/prepare_portable_misc_full.ps1`: generated `Misc.portable.cpp` receives an early builtin-integer classification path. Original `Misc.cpp` remains untouched. The existing `ikFunc(Integer)` probe was retained unchanged as the regression test and #117 went green.
+The real `idr-cli.exe` already compiles, links and runs against `tests/idr_cli_fixture.cpp`. It performs PE32 loading, real disassembly, bounded CFG analysis, procedure discovery/reconciliation and neutral `ProcedureDecompileInput` construction.
 
-## String compatibility
+The main CLI still does not link/use `IdrLegacyDecompilerRunner` to emit real decompiler source. The focused runner probe already proves that legacy full `Decompile()` can be consumed through the neutral source envelope.
 
-Generated legacy TUs currently translate several Embarcadero String APIs to portable helpers, including `Pos`, `SubString`, `LastDelimiter`, `Length`, `SetLength`, `IsEmpty`, trim/case helpers, and selected numeric String construction.
-
-Direct `String[index]` remains dangerous because Borland String indexing is 1-based while `std::string` is 0-based. Do not globally rewrite it without evidence; patch generated copies only when a runtime-reached site proves necessary.
+The remaining integration must not use CFG `observedSpan` as authoritative procedure size.
 
 ## Procedure-size invariant
 
@@ -104,11 +96,11 @@ Use current HEAD as parent and a non-forced fast-forward ref update.
 
 ## Immediate technical frontier
 
-The basic direct-call family is now proven for both procedure and Integer-returning function. Advance incrementally into one more dimension at a time:
+The synthetic register-argument family has reached a stable milestone. Resume controlled real PE32/CLI work:
 
-1. add one deterministic explicit argument to a direct callee, or exercise a different safe builtin return type;
-2. keep `manualInput` counting at zero when complete metadata is supplied;
-3. inspect results only through neutral execution/source envelopes;
-4. stop at the first new runtime-reached dependency;
-5. preserve original legacy source and prefer generated adapters;
-6. after the next stable call/prototype milestone, resume controlled real Delphi Win32 fixture comparison and deterministic CLI output work.
+1. establish an explicit authoritative procedure-size source for one procedure in the existing real fixture, without promoting `observedSpan` to `procSize`;
+2. link `IdrLegacyDecompilerRunner` into `idr-cli.exe` only when that size contract is satisfied;
+3. decompile exactly one real analyzed procedure and print deterministic neutral source output;
+4. require zero unexpected `ManualInput()` and fail explicitly when metadata is unavailable;
+5. compare the resulting output against the controlled fixture;
+6. then broaden the CLI one call/prototype family at a time and prepare publishable artifacts.

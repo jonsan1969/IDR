@@ -156,3 +156,17 @@ jobs:
           findstr /b /c:"entry-decompile-manual-input-calls=0" idr-cli-output.txt >nul || exit /b 1
           findstr /b /c:"entry-source[0]=begin" idr-cli-output.txt >nul || exit /b 1
           findstr /b /c:"entry-decompile-source-envelope=ok" idr-cli-output.txt >nul || exit /b 1
+
+      - name: Prepare portable CLI artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item .\idr-cli.exe .\dist\idr-cli.exe
+          Copy-Item .\dis.dll .\dist\dis.dll
+
+      - name: Upload portable CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: idr-portable-cli-win32
+          path: dist
+          if-no-files-found: error

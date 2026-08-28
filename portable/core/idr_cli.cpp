@@ -4,9 +4,12 @@
 #include "IdrLegacyCompat.h"
 #include "IdrLegacyProcedureAdapter.h"
 #include "IdrLegacyDecompilerInput.h"
+#include "IdrLegacyDecompilerRunner.h"
 #include "IdrPeLoader.h"
 #include "../../Disasm.h"
 
+#include <climits>
+#include <cwchar>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
@@ -47,9 +50,24 @@ const char *EdgeKindName(idr::core::ControlFlowEdgeKind kind) {
 } // namespace
 
 int wmain(int argc, wchar_t **argv) {
-    if (argc != 2) {
-        std::cerr << "usage: idr-cli.exe <target.exe>\n";
+    if (argc != 2 && argc != 4) {
+        std::cerr << "usage: idr-cli.exe <target.exe> [--entry-size <bytes>]\n";
         return 2;
+    }
+
+    int explicitEntrySize = 0;
+    if (argc == 4) {
+        if (std::wcscmp(argv[2], L"--entry-size") != 0) {
+            std::cerr << "usage: idr-cli.exe <target.exe> [--entry-size <bytes>]\n";
+            return 2;
+        }
+        wchar_t *end = nullptr;
+        const long parsed = std::wcstol(argv[3], &end, 0);
+        if (!argv[3][0] || !end || *end != L'\0' || parsed <= 0 || parsed > INT_MAX) {
+            std::cerr << "idr-cli: invalid --entry-size\n";
+            return 2;
+        }
+        explicitEntrySize = static_cast<int>(parsed);
     }
 
     const std::filesystem::path target(argv[1]);
@@ -219,6 +237,56 @@ int wmain(int argc, wchar_t **argv) {
         decompileCalleePrototypeCount += decompileInput.callees.size();
     }
 
+    bool entryDecompiled = false;
+    std::size_t manualInputCalls = 0;
+    idr::core::ProcedureSourceResult entrySource;
+    auto services = idr::core::MakeHeadlessServices();
+    if (explicitEntrySize > 0) {
+        services.manualInput = [&](idr::core::DWord, idr::core::DWord,
+                                   const std::string &, const std::string &)
+            -> std::optional<std::string> {
+            ++manualInputCalls;
+            return std::nullopt;
+        };
+        idr::core::SetLegacyServices(&services);
+
+        const idr::core::HeadlessProcedureSizeResolver entrySizeResolver =
+            [&](const idr::core::ProcedureSizeResolutionRequest &request) {
+                idr::core::ProcedureSizeResolutionResult result;
+                if (request.procedureAddress != session.entryPoint || request.storedSize != 0)
+                    return result;
+                result.status = idr::core::ProcedureSizeResolutionStatus::Resolved;
+                result.size = explicitEntrySize;
+                return result;
+            };
+
+        if (!idr::core::DecompileActiveLegacyProcedureSource(
+                session.entryPoint, entrySource, entrySizeResolver)) {
+            std::cerr << "idr-cli: entry decompile failed with explicit size\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 18;
+        }
+        if (!entrySource.completed || entrySource.procedureAddress != session.entryPoint ||
+            entrySource.procedureSize != explicitEntrySize ||
+            entrySource.procedureSizeSource != idr::core::ProcedureSizeSource::HeadlessResolver) {
+            std::cerr << "idr-cli: entry decompile result does not match explicit size contract\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 19;
+        }
+        if (manualInputCalls != 0) {
+            std::cerr << "idr-cli: entry decompile requested unexpected manual input\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 20;
+        }
+        if (entrySource.body.size() < 2 || entrySource.body.front() != "begin" ||
+            entrySource.body.back() != "end") {
+            std::cerr << "idr-cli: entry decompile source envelope is incomplete\n";
+            idr::core::ResetLegacyLoadedPeSession();
+            return 21;
+        }
+        entryDecompiled = true;
+    }
+
     std::cout << "IDR portable CLI\n";
     std::cout << "file=" << target.u8string() << '\n';
     PrintHex("image-base", image.imageBase);
@@ -307,6 +375,15 @@ int wmain(int argc, wchar_t **argv) {
     std::cout << "legacy-procedure-reused-count=" << reusedProcedures.size() << '\n';
     std::cout << "decompile-input-count=" << decompileInputCount << '\n';
     std::cout << "decompile-callee-prototype-count=" << decompileCalleePrototypeCount << '\n';
+    if (entryDecompiled) {
+        std::cout << "entry-decompile-size=" << entrySource.procedureSize << '\n';
+        std::cout << "entry-decompile-size-source=headless-resolver\n";
+        std::cout << "entry-decompile-manual-input-calls=" << manualInputCalls << '\n';
+        std::cout << "entry-source-count=" << entrySource.body.size() << '\n';
+        for (std::size_t i = 0; i < entrySource.body.size(); ++i)
+            std::cout << "entry-source[" << i << "]=" << entrySource.body[i] << '\n';
+        std::cout << "entry-decompile-source-envelope=ok\n";
+    }
     std::cout << "entry-flags=0x"
               << std::uppercase << std::hex << std::setw(8) << std::setfill('0') << entryFlags
               << std::dec << std::setfill(' ') << '\n';

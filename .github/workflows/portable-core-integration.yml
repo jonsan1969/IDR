@@ -133,13 +133,13 @@ jobs:
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%I"
           call "%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          link /nologo /subsystem:console /out:idr-cli.exe IdrCoreServices.obj IdrImageContext.obj IdrPeLoader.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj IdrDecompilerModel.obj IdrLegacyBridge.obj idr_cli.obj Disasm.portable.obj KnowledgeBase.portable.obj Infos.portable.obj Misc.portable.obj Decompiler.portable.obj || exit /b 1
+          link /nologo /subsystem:console /out:idr-cli.exe IdrCoreServices.obj IdrImageContext.obj IdrPeLoader.obj IdrAnalysis.obj IdrAnalysisState.obj IdrInstructionNav.obj IdrDecompilerModel.obj IdrLegacyBridge.obj IdrLegacyDecompilerRunner.obj idr_cli.obj Disasm.portable.obj KnowledgeBase.portable.obj Infos.portable.obj Misc.portable.obj Decompiler.portable.obj || exit /b 1
           link /nologo /subsystem:console /out:idr-cli-fixture.exe idr_cli_fixture.obj || exit /b 1
 
-      - name: Decode real PE32 entry point through portable CLI
+      - name: Decode and decompile real PE32 entry point through portable CLI
         shell: cmd
         run: |
-          .\idr-cli.exe .\idr-cli-fixture.exe > idr-cli-output.txt || exit /b 1
+          .\idr-cli.exe .\idr-cli-fixture.exe --entry-size 12 > idr-cli-output.txt || exit /b 1
           type idr-cli-output.txt
           findstr /b /c:"entry-instruction-len=" idr-cli-output.txt >nul || exit /b 1
           findstr /b /c:"entry-mnemonic=" idr-cli-output.txt >nul || exit /b 1
@@ -151,3 +151,8 @@ jobs:
           findstr /b /c:"fallthrough-edge-count=1" idr-cli-output.txt >nul || exit /b 1
           findstr /b /c:"candidate-count=2" idr-cli-output.txt >nul || exit /b 1
           findstr /b /c:"candidate-discovered-count=2" idr-cli-output.txt >nul || exit /b 1
+          findstr /b /c:"entry-decompile-size=12" idr-cli-output.txt >nul || exit /b 1
+          findstr /b /c:"entry-decompile-size-source=headless-resolver" idr-cli-output.txt >nul || exit /b 1
+          findstr /b /c:"entry-decompile-manual-input-calls=0" idr-cli-output.txt >nul || exit /b 1
+          findstr /b /c:"entry-source[0]=begin" idr-cli-output.txt >nul || exit /b 1
+          findstr /b /c:"entry-decompile-source-envelope=ok" idr-cli-output.txt >nul || exit /b 1

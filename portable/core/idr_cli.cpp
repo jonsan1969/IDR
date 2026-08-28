@@ -113,7 +113,10 @@ int wmain(int argc, wchar_t **argv) {
                 };
                 std::cout << "entry-size-estimator=legacy-compatible\n";
                 std::cout << "entry-size-estimated=" << estimatedSize << '\n';
-                return IdrCliOriginalWmain(4, estimatedArgv);
+                std::cout << "entry-cli-stage=dispatch\n";
+                const int result = IdrCliOriginalWmain(4, estimatedArgv);
+                std::cout << "entry-cli-stage=returned code=" << result << '\n';
+                return result;
             }
         }
     }

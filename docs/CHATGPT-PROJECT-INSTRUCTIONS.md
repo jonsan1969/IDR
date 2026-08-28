@@ -41,6 +41,7 @@ Before making changes:
 - Green run: metadata/status only; do not fetch logs.
 - Red run: metadata -> jobs -> failed job log exactly once.
 - Never fetch the same failed log repeatedly.
+- For GitHub Actions and other Node-based CI tooling, require Node.js 24 or higher. Do not introduce or retain an action revision that declares Node.js 20 when a Node.js 24+-compatible revision exists. Prefer current action majors whose runtime is Node.js 24+ and treat Node 20 deprecation warnings as migration work, not harmless noise.
 
 Preferred push-run discovery for `agent/portable-cli`:
 

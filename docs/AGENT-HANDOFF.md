@@ -14,21 +14,22 @@ The repository is the source of truth. Never use old chat memory as current stat
 
 Immediately before this docs-only update:
 
-`8bd65445cd69a4b73dee73e6fbf7711bb7b3d18a` — `Exercise two register arguments`
+`7c96a13f69317f0a2bbbef2f5149e574a32f4ce4` — `Publish portable CLI artifact`
 
 Always verify `agent/portable-cli` HEAD again before future writes.
 
 ## Latest verified green run
 
-Run #120:
+Run #122:
 
-- internal id `33104933853`
-- head SHA `8bd65445cd69a4b73dee73e6fbf7711bb7b3d18a`
+- internal id `33143496591`
+- head SHA `7c96a13f69317f0a2bbbef2f5149e574a32f4ce4`
 - workflow `Portable CLI integration`
 - status `completed`
 - conclusion `success`
+- artifact `idr-portable-cli-win32` built successfully with `idr-cli.exe` + `dis.dll`
 
-No #120 jobs or logs were fetched.
+No #122 jobs or logs were fetched because the run was green.
 
 ## Current architecture
 
@@ -45,47 +46,33 @@ Important invariants:
 - Legacy engine classes stay behind `IdrLegacyDecompilerRunner`.
 - The source wrapper does not call GUI/presentation-owned `TDecompileEnv::DecompileProc()`.
 
-## Runtime-proven fixtures
+## Runtime-proven fixtures and CLI bridge
 
 - one-byte `RET` full decompile;
 - classic stack frame `55 8B EC 5D C3`;
 - direct E8 call to `ikProc` callee — #115 green;
 - direct E8 call to `ikFunc` callee returning `Integer` — #117 green;
 - direct Integer-returning call with one explicit EAX value argument — #119 green;
-- direct Integer-returning call with two explicit register arguments EAX + ECX — #120 green.
+- direct Integer-returning call with two explicit register arguments EAX + ECX — #120 green;
+- real PE32 fixture entry decompiled through the actual `idr-cli.exe` with explicit `--entry-size 12` — #121 green, zero `ManualInput()` and deterministic `begin`/`end` source envelope;
+- publishable Windows artifact containing `idr-cli.exe` + `dis.dll` — #122 green.
 
-Call/prototype metadata is explicit and round-tripped through the neutral/legacy adapter. Complete metadata is required to keep `ManualInput()` at zero. No procedure size is inferred from CFG span.
-
-## Relevant diagnosis history
-
-- #112 direct function call: runtime `0xC0000005`; failed log fetched exactly once.
-- #113 stage tracing: crash after `decompile-enter`; failed log fetched exactly once.
-- #114 fixture seed mistake: controlled exit 39; failed log fetched exactly once.
-- #115 direct procedure call green.
-- #116 `GetTypeKind("Integer")` localized AV before decompile; failed log fetched exactly once.
-- #117 generated-only builtin Integer classification bypassed unsafe RTTI/KB lookup for already-known builtin integers; original `Misc.cpp` untouched.
-- #119 one register argument green.
-- #120 two register arguments green.
-
-Never fetch failed logs again for #106, #110, #112, #113, #114, or #116.
+Call/prototype metadata remains explicit and complete metadata is required to keep `ManualInput()` at zero. No procedure size is inferred from CFG span.
 
 ## Exact next technical frontier
 
-Stop expanding synthetic register-argument coverage for now. The next frontier is the real CLI boundary:
+The first external-testable artifact exists. Next work should use that milestone rather than returning to synthetic argument coverage:
 
-1. use the existing real PE32 CLI fixture as the controlled integration target;
-2. identify an explicit authoritative procedure-size source for exactly one real analyzed procedure, without using CFG `observedSpan` as `procSize`;
-3. link/use `IdrLegacyDecompilerRunner` from `idr-cli.exe` only for procedures whose size contract is satisfied;
-4. call `DecompileActiveLegacyProcedureSource()` for one controlled procedure;
-5. require deterministic source-envelope output and zero unexpected `ManualInput()`;
-6. fail/report unsupported procedures explicitly instead of fabricating metadata;
-7. once green, extend deterministic CLI output and prepare `idr-cli.exe + dis.dll` artifacts for external guinea-pig testing.
-
-Do not combine this first CLI bridge with imports, indirect dispatch, stack arguments or broad calling-convention work.
+1. exercise the artifact against a controlled real Delphi guinea-pig binary;
+2. capture compiler/linker/runtime evidence for the first unsupported or incorrect behavior;
+3. keep procedure-size resolution explicit — do not promote CFG `observedSpan` to `procSize`;
+4. add only the narrow metadata/interaction policy reached by that real binary;
+5. preserve deterministic CLI output and zero unexpected interactive prompts;
+6. broaden imports, indirect dispatch, stack/calling-convention families and richer Delphi cases only from observed runtime evidence.
 
 ## Known risks
 
-- authoritative procedure-size discovery for real PE32 procedures;
+- authoritative procedure-size discovery for arbitrary real PE32 procedures;
 - Borland String 1-based indexing versus `std::string` 0-based indexing;
 - genuine RTTI/KnowledgeBase-dependent type resolution beyond known builtin integers;
 - `WideString`, `Variant`, `Currency`, `Comp` and formatting compatibility;
@@ -110,6 +97,7 @@ If the collection endpoint is blocked, capability-check GitHub tools for `workfl
 - Never push over an active relevant workflow run.
 - Never re-fetch a failed log already consumed.
 - `docs/**` is under `paths-ignore`; docs-only commits should not start normal integration while that remains true.
+- Node-based GitHub Actions/CI tooling must use Node.js 24 or higher. Do not introduce or retain action revisions that declare Node.js 20 when a Node.js 24+-compatible revision exists. Treat Node 20 deprecation annotations as migration work to remove.
 
 ## Atomic Git write discipline
 

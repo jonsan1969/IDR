@@ -5,14 +5,21 @@
 #include "IdrLegacyProcedureAdapter.h"
 #include "Decompiler.portable.h"
 
+#include <iostream>
+
 namespace idr::core {
 namespace {
+
+void RunnerStage(const char *stage) {
+    std::cerr << "legacy-runner-stage=" << stage << '\n' << std::flush;
+}
 
 bool ResolveActiveLegacyProcedure(
     DWord address,
     const HeadlessProcedureSizeResolver &sizeResolver,
     PInfoRec &record,
     ResolvedProcedureSize &resolvedSize) {
+    RunnerStage("resolve-enter");
     record = nullptr;
     resolvedSize = {};
 
@@ -34,7 +41,11 @@ bool ResolveActiveLegacyProcedure(
     sizeRequest.procedureAddress = address;
     sizeRequest.storedSize = record->procInfo->procSize;
     const auto &effectiveResolver = sizeResolver ? sizeResolver : LegacyProcedureSizeResolver();
-    return ResolveProcedureSize(sizeRequest, effectiveResolver, resolvedSize);
+    const bool resolved = ResolveProcedureSize(sizeRequest, effectiveResolver, resolvedSize);
+    if (resolved) {
+        std::cerr << "legacy-runner-stage=resolve-ok size=" << resolvedSize.size << '\n' << std::flush;
+    }
+    return resolved;
 }
 
 void CaptureBody(TDecompileEnv &environment, std::vector<std::string> &body) {
@@ -80,13 +91,23 @@ bool DecompileActiveLegacyProcedure(
     ResolvedProcedureSize resolvedSize;
     if (!ResolveActiveLegacyProcedure(address, sizeResolver, record, resolvedSize)) return false;
 
+    RunnerStage("environment-enter");
     TDecompileEnv environment(address, resolvedSize.size, record);
+    RunnerStage("environment-ok");
     TDecompiler decompiler(&environment);
+    RunnerStage("decompiler-constructed");
+    RunnerStage("init-enter");
     if (!decompiler.Init(address)) return false;
+    RunnerStage("init-ok");
+    RunnerStage("init-flags-enter");
     decompiler.InitFlags();
+    RunnerStage("init-flags-ok");
     decompiler.SetStop(address + static_cast<DWord>(resolvedSize.size));
+    RunnerStage("stop-set");
 
+    RunnerStage("decompile-enter");
     const DWord endAddress = decompiler.Decompile(address, 0, nullptr);
+    RunnerStage("decompile-returned");
 
     result.procedureAddress = address;
     result.procedureSize = environment.Size;
@@ -95,6 +116,7 @@ bool DecompileActiveLegacyProcedure(
     result.wasRet = decompiler.WasRet;
     result.completed = true;
     CaptureBody(environment, result.body);
+    RunnerStage("capture-body-ok");
     return true;
 }
 
@@ -115,6 +137,7 @@ bool DecompileActiveLegacyProcedureSource(
     result.body.push_back("begin");
     result.body.insert(result.body.end(), lowLevel.body.begin(), lowLevel.body.end());
     result.body.push_back("end");
+    RunnerStage("source-wrap-ok");
     return true;
 }
 

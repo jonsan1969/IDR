@@ -242,6 +242,7 @@ int wmain(int argc, wchar_t **argv) {
     idr::core::ProcedureSourceResult entrySource;
     auto services = idr::core::MakeHeadlessServices();
     if (explicitEntrySize > 0) {
+        std::cout << "entry-decompile-stage=services-prepare\n" << std::flush;
         services.manualInput = [&](idr::core::DWord, idr::core::DWord,
                                    const std::string &, const std::string &)
             -> std::optional<std::string> {
@@ -249,6 +250,7 @@ int wmain(int argc, wchar_t **argv) {
             return std::nullopt;
         };
         idr::core::SetLegacyServices(&services);
+        std::cout << "entry-decompile-stage=services-installed\n" << std::flush;
 
         const idr::core::HeadlessProcedureSizeResolver entrySizeResolver =
             [&](const idr::core::ProcedureSizeResolutionRequest &request) {
@@ -260,8 +262,12 @@ int wmain(int argc, wchar_t **argv) {
                 return result;
             };
 
-        if (!idr::core::DecompileActiveLegacyProcedureSource(
-                session.entryPoint, entrySource, entrySizeResolver)) {
+        std::cout << "entry-decompile-stage=decompile-enter\n" << std::flush;
+        const bool decompileOk = idr::core::DecompileActiveLegacyProcedureSource(
+            session.entryPoint, entrySource, entrySizeResolver);
+        std::cout << "entry-decompile-stage=decompile-returned ok="
+                  << (decompileOk ? 1 : 0) << '\n' << std::flush;
+        if (!decompileOk) {
             std::cerr << "idr-cli: entry decompile failed with explicit size\n";
             idr::core::ResetLegacyLoadedPeSession();
             return 18;
@@ -284,6 +290,7 @@ int wmain(int argc, wchar_t **argv) {
             idr::core::ResetLegacyLoadedPeSession();
             return 21;
         }
+        std::cout << "entry-decompile-stage=contract-ok\n" << std::flush;
         entryDecompiled = true;
     }
 

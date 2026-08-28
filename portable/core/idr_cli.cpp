@@ -57,7 +57,7 @@ int EstimateLegacyCompatibleEntrySize(const idr::core::LoadedPeImage &image) {
         if (lastForwardAddress != 0 && currentAddress >= lastForwardAddress)
             lastForwardAddress = 0;
 
-        if (info.Ret && lastForwardAddress == 0) {
+        if (info.Ret) {
             idr::core::SetImageView({});
             return static_cast<int>(nextAddress - fromAddress);
         }

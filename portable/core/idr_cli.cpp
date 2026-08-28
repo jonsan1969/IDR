@@ -42,7 +42,7 @@ int EstimateLegacyCompatibleEntrySize(const idr::core::LoadedPeImage &image) {
 
         DISINFO info{};
         const int length = estimatorDisasm.Disassemble(
-            image.bytes.data() + position,
+            mutableImage.bytes.data() + position,
             static_cast<__int64>(currentAddress),
             &info,
             0);
